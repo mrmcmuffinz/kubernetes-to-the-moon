@@ -12,6 +12,11 @@ Pull-through registry caches solve this. Install them once on the host, configur
 - Multi-node guides with **Option A** (software NAT bridge) assign `br0` the IP `192.168.122.1` and NAT VM traffic through the host uplink. The host bridge IP is `192.168.122.1`.
 - Multi-node guides with **Option B** (physical NIC bridge) slave a spare NIC to `br0` and assign it a static IP in your physical LAN range. The host bridge IP is whatever you set in the Netplan config, for example `192.168.2.200`. Substitute that address wherever `192.168.122.1` appears in this document.
 
+**Installation method note:** The CKA lab setup guides use two different containerd installation methods, which affect the runc binary location:
+
+- Binary-cache guides (single-systemd, two-systemd) download containerd and runc from GitHub releases and install runc to `/usr/local/bin/runc`. Use this path in the configs below.
+- Kubeadm guides (single-kubeadm, two-kubeadm, three-kubeadm, ha-kubeadm) install containerd via `apt install containerd`, which installs runc to `/usr/sbin/runc`. If you are using an apt-based setup, change `BinaryName = '/usr/local/bin/runc'` to `BinaryName = '/usr/sbin/runc'` in all configs below, or verify your existing runc path with `which runc`.
+
 ## Network Flow Architecture
 
 The following diagrams show how container image pulls flow through the registry caches for different registries and networking modes.
@@ -423,17 +428,20 @@ version = 3
   runtime_type = 'io.containerd.runc.v2'
   [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
     SystemdCgroup = true
+    # BinaryName: Use '/usr/local/bin/runc' for binary-cache setups
+    #             Use '/usr/sbin/runc' for apt-installed containerd
     BinaryName = '/usr/local/bin/runc'
 
-[plugins."io.containerd.grpc.v1.cri".registry]
-  [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+[plugins.'io.containerd.cri.v1.images'.registry]
+  config_path = ''
+  [plugins.'io.containerd.cri.v1.images'.registry.mirrors]
+    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."docker.io"]
       endpoint = ["http://10.0.2.2:6001"]
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."registry.k8s.io"]
+    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."registry.k8s.io"]
       endpoint = ["http://10.0.2.2:6002"]
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."quay.io"]
+    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."quay.io"]
       endpoint = ["http://10.0.2.2:6003"]
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."ghcr.io"]
+    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."ghcr.io"]
       endpoint = ["http://10.0.2.2:6004"]
 EOF
 ```
@@ -448,17 +456,20 @@ version = 3
   runtime_type = 'io.containerd.runc.v2'
   [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
     SystemdCgroup = true
+    # BinaryName: Use '/usr/local/bin/runc' for binary-cache setups
+    #             Use '/usr/sbin/runc' for apt-installed containerd
     BinaryName = '/usr/local/bin/runc'
 
-[plugins."io.containerd.grpc.v1.cri".registry]
-  [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+[plugins.'io.containerd.cri.v1.images'.registry]
+  config_path = ''
+  [plugins.'io.containerd.cri.v1.images'.registry.mirrors]
+    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."docker.io"]
       endpoint = ["http://192.168.122.1:6001"]
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."registry.k8s.io"]
+    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."registry.k8s.io"]
       endpoint = ["http://192.168.122.1:6002"]
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."quay.io"]
+    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."quay.io"]
       endpoint = ["http://192.168.122.1:6003"]
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."ghcr.io"]
+    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."ghcr.io"]
       endpoint = ["http://192.168.122.1:6004"]
 EOF
 ```
@@ -475,20 +486,28 @@ version = 3
   runtime_type = 'io.containerd.runc.v2'
   [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
     SystemdCgroup = true
+    # BinaryName: Use '/usr/local/bin/runc' for binary-cache setups
+    #             Use '/usr/sbin/runc' for apt-installed containerd
     BinaryName = '/usr/local/bin/runc'
 
-[plugins."io.containerd.grpc.v1.cri".registry]
-  [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+[plugins.'io.containerd.cri.v1.images'.registry]
+  config_path = ''
+  [plugins.'io.containerd.cri.v1.images'.registry.mirrors]
+    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."docker.io"]
       endpoint = ["http://192.168.2.200:6001"]
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."registry.k8s.io"]
+    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."registry.k8s.io"]
       endpoint = ["http://192.168.2.200:6002"]
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."quay.io"]
+    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."quay.io"]
       endpoint = ["http://192.168.2.200:6003"]
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."ghcr.io"]
+    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."ghcr.io"]
       endpoint = ["http://192.168.2.200:6004"]
 EOF
 ```
+
+**Important configuration notes:**
+
+- `config_path = ''` explicitly disables the config_path approach. Containerd's default config sets `config_path = '/etc/containerd/certs.d:/etc/docker/certs.d'`, but you cannot use both `config_path` and inline `mirrors` at the same time. Setting it to empty string tells containerd to use inline mirrors instead.
+- The plugin path `plugins.'io.containerd.cri.v1.images'.registry` is the modern containerd 2.x format (not the older `plugins."io.containerd.grpc.v1.cri".registry`).
 
 **Restart containerd:**
 
@@ -530,17 +549,19 @@ write_files:
         runtime_type = 'io.containerd.runc.v2'
         [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
           SystemdCgroup = true
+          # Use '/usr/local/bin/runc' for binary-cache, '/usr/sbin/runc' for apt
           BinaryName = '/usr/local/bin/runc'
 
-      [plugins."io.containerd.grpc.v1.cri".registry]
-        [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
-          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+      [plugins.'io.containerd.cri.v1.images'.registry]
+        config_path = ''
+        [plugins.'io.containerd.cri.v1.images'.registry.mirrors]
+          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."docker.io"]
             endpoint = ["http://10.0.2.2:6001"]
-          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."registry.k8s.io"]
+          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."registry.k8s.io"]
             endpoint = ["http://10.0.2.2:6002"]
-          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."quay.io"]
+          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."quay.io"]
             endpoint = ["http://10.0.2.2:6003"]
-          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."ghcr.io"]
+          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."ghcr.io"]
             endpoint = ["http://10.0.2.2:6004"]
     permissions: '0644'
 ```
@@ -557,17 +578,19 @@ write_files:
         runtime_type = 'io.containerd.runc.v2'
         [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
           SystemdCgroup = true
+          # Use '/usr/local/bin/runc' for binary-cache, '/usr/sbin/runc' for apt
           BinaryName = '/usr/local/bin/runc'
 
-      [plugins."io.containerd.grpc.v1.cri".registry]
-        [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
-          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+      [plugins.'io.containerd.cri.v1.images'.registry]
+        config_path = ''
+        [plugins.'io.containerd.cri.v1.images'.registry.mirrors]
+          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."docker.io"]
             endpoint = ["http://192.168.122.1:6001"]
-          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."registry.k8s.io"]
+          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."registry.k8s.io"]
             endpoint = ["http://192.168.122.1:6002"]
-          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."quay.io"]
+          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."quay.io"]
             endpoint = ["http://192.168.122.1:6003"]
-          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."ghcr.io"]
+          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."ghcr.io"]
             endpoint = ["http://192.168.122.1:6004"]
     permissions: '0644'
 ```
@@ -586,17 +609,19 @@ write_files:
         runtime_type = 'io.containerd.runc.v2'
         [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
           SystemdCgroup = true
+          # Use '/usr/local/bin/runc' for binary-cache, '/usr/sbin/runc' for apt
           BinaryName = '/usr/local/bin/runc'
 
-      [plugins."io.containerd.grpc.v1.cri".registry]
-        [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
-          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+      [plugins.'io.containerd.cri.v1.images'.registry]
+        config_path = ''
+        [plugins.'io.containerd.cri.v1.images'.registry.mirrors]
+          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."docker.io"]
             endpoint = ["http://192.168.2.200:6001"]
-          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."registry.k8s.io"]
+          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."registry.k8s.io"]
             endpoint = ["http://192.168.2.200:6002"]
-          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."quay.io"]
+          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."quay.io"]
             endpoint = ["http://192.168.2.200:6003"]
-          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."ghcr.io"]
+          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."ghcr.io"]
             endpoint = ["http://192.168.2.200:6004"]
     permissions: '0644'
 ```
@@ -761,6 +786,66 @@ If mirrors are configured but images are not being cached, check registry logs o
 
 ```bash
 nerdctl compose logs | grep -i error
+```
+
+**CRI plugin fails with "mirrors cannot be set when config_path is provided"**
+
+crictl commands fail with `unknown service runtime.v1.ImageService` and containerd logs show:
+
+```
+error="invalid cri image config: `mirrors` cannot be set when `config_path` is provided"
+```
+
+This happens when containerd merges your config with the default config that sets `config_path`. You must explicitly disable config_path when using inline mirrors.
+
+Fix: Add `config_path = ''` to the registry section:
+
+```bash
+sudo nano /etc/containerd/config.toml
+```
+
+Ensure the registry section looks like:
+
+```toml
+[plugins.'io.containerd.cri.v1.images'.registry]
+  config_path = ''
+  [plugins.'io.containerd.cri.v1.images'.registry.mirrors]
+    # ... your mirrors here
+```
+
+Then restart containerd:
+
+```bash
+sudo systemctl restart containerd
+```
+
+**Wrong runc binary path**
+
+containerd fails to start with errors like `runc: executable file not found in $PATH` or pods fail to start.
+
+Check your containerd installation method:
+
+```bash
+# For apt-installed containerd:
+which runc
+# Should show: /usr/sbin/runc
+
+# For binary-cache installed containerd:
+which runc
+# Should show: /usr/local/bin/runc
+```
+
+Verify the BinaryName in your config matches:
+
+```bash
+grep BinaryName /etc/containerd/config.toml
+```
+
+If they don't match, edit the config and restart containerd:
+
+```bash
+sudo sed -i "s|BinaryName = '.*'|BinaryName = '/usr/sbin/runc'|" /etc/containerd/config.toml
+sudo systemctl restart containerd
 ```
 
 **Upstream registry timeouts**
