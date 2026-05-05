@@ -42,6 +42,8 @@ Three IP ranges are used throughout the documents and must stay consistent:
 | `10.96.0.0/16` | Service ClusterIP range | `kubeadm` `serviceSubnet`, CoreDNS ClusterIP (`10.96.0.10`), kubelet `clusterDNS`, `kubernetes` Service (`10.96.0.1`) |
 | `10.244.0.0/16` | Pod IP range | `kubeadm` `podSubnet`, Calico IPPool `cidr` |
 
+**Option B Users:** If you follow Option B (physical NIC bridge) in document 01, the `192.168.122.0/24` range above is replaced by your physical LAN subnet. See the [IP mapping table in document 02](02-vm-provisioning.md#option-b-users-ip-substitution) for the complete substitution reference.
+
 The bridge subnet matches libvirt's default `virbr0`. The host bridge setup in document 01 detects this collision and offers a way to reuse `virbr0` instead.
 
 ## VM Access

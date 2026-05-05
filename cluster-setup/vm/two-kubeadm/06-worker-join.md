@@ -16,6 +16,17 @@ The CKA exam tests `kubeadm join` and token rotation explicitly, so the practice
 
 `controlplane-1` is `Ready` with Calico installed. `nodes-1` has containerd running and the `kubeadm` toolchain installed at v1.35.3 from document 03. SSH access to both nodes from the host.
 
+## Option B Users: IP Address Substitution
+
+If you followed **Option B (physical NIC bridge)** in document 01, all IP addresses in this document assume Option A networking and must be replaced with your physical LAN addresses.
+
+Refer to the [IP mapping table in document 02](02-vm-provisioning.md#option-b-users-ip-substitution) for the complete substitution reference.
+
+For the kubeadm join command, replace:
+- `192.168.122.10:6443` → your controlplane-1 IP with port (e.g., `192.168.2.210:6443`)
+
+All verification commands that reference `192.168.122.10` must use your actual controlplane-1 IP.
+
 ---
 
 ## Part 1: Generate a Fresh Join Command

@@ -157,6 +157,22 @@ If `kubectl top nodes` returns "metrics not available", give it another 30 secon
 
 ## Part 4: MetalLB (Optional)
 
+### Option B Users: IP Address Pool Substitution
+
+If you followed **Option B (physical NIC bridge)** in document 01, the MetalLB IP address pool in Step 2 assumes Option A networking and must be replaced with an available range from your physical LAN.
+
+Refer to the [IP mapping table in document 02](02-vm-provisioning.md#option-b-users-ip-substitution) for the complete substitution reference.
+
+For the MetalLB IPAddressPool, replace:
+- `192.168.122.200-192.168.122.220` → a range from your physical network that does not overlap with your VMs or other devices (e.g., `192.168.2.220-192.168.2.240`)
+
+Choose a range that:
+- Is on the same subnet as your bridge and VMs
+- Does not conflict with your VMs (e.g., .210, .211), gateway, or bridge IP
+- Has enough addresses for your testing needs (20 IPs is typically sufficient)
+
+---
+
 Without a cloud provider, `Service type=LoadBalancer` stays in `<pending>` forever because there is nothing to assign external IPs. MetalLB fills that role on bare metal and makes Ingress controller install scenarios work end to end. Skip this if you only care about ClusterIP and NodePort.
 
 ### Step 1: Install
