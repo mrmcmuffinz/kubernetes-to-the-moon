@@ -44,7 +44,8 @@
       "Bash(gh pr *)",
       "Bash(apt list *)",
       "Bash(chmod +x *)",
-      "Bash(echo \"exit: $?\")"
+      "Bash(echo \"exit: $?\")",
+      "Bash(./verify.sh 1.1)"
     ]
   },
   "effortLevel": "xhigh"

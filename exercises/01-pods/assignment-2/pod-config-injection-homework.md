@@ -60,7 +60,7 @@ kubectl -n ex-1-1 logs greeter
 kubectl create namespace ex-1-2
 ```
 
-**Objective:** Create a generic Secret named `api-creds` in namespace `ex-1-2` with a single key `API_KEY` whose value is `sk-test-9f8e7d6c5b4a3210`. Create a pod named `api-consumer` using image `busybox:1.36` that runs `sh -c 'echo "key length: ${#API_KEY}"; sleep 3600'`. Expose only the `API_KEY` key from the Secret as a single environment variable named `API_KEY` in the container. The log output should report that the key is 20 characters long.
+**Objective:** Create a generic Secret named `api-creds` in namespace `ex-1-2` with a single key `API_KEY` whose value is `sk-test-9f8e7d6c5b4a3210`. Create a pod named `api-consumer` using image `busybox:1.36` that runs `sh -c 'echo "key length: ${#API_KEY}"; sleep 3600'`. Expose only the `API_KEY` key from the Secret as a single environment variable named `API_KEY` in the container. The log output should report that the key is 24 characters long.
 
 **Verification:**
 
@@ -72,7 +72,7 @@ kubectl -n ex-1-2 wait --for=condition=Ready pod/api-consumer --timeout=60s
 # Expected: pod/api-consumer condition met
 
 kubectl -n ex-1-2 logs api-consumer
-# Expected: key length: 20
+# Expected: key length: 24
 
 kubectl -n ex-1-2 exec api-consumer -- printenv API_KEY
 # Expected: sk-test-9f8e7d6c5b4a3210
