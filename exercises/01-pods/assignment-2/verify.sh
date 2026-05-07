@@ -131,7 +131,9 @@ get_configmap_key() {
     local cm=$1
     local ns=$2
     local key=$3
-    kubectl get configmap "$cm" -n "$ns" -o jsonpath="{.data.${key}}" 2>/dev/null
+    # Escape dots in key for jsonpath
+    local escaped_key="${key//./\\.}"
+    kubectl get configmap "$cm" -n "$ns" -o jsonpath="{.data.${escaped_key}}" 2>/dev/null
 }
 
 # Helper: get Secret data key (base64 decoded)
@@ -139,7 +141,9 @@ get_secret_key() {
     local secret=$1
     local ns=$2
     local key=$3
-    kubectl get secret "$secret" -n "$ns" -o jsonpath="{.data.${key}}" 2>/dev/null | base64 -d
+    # Escape dots in key for jsonpath
+    local escaped_key="${key//./\\.}"
+    kubectl get secret "$secret" -n "$ns" -o jsonpath="{.data.${escaped_key}}" 2>/dev/null | base64 -d
 }
 
 ################################################################################
