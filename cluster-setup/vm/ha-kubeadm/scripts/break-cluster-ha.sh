@@ -108,8 +108,8 @@ print_banner() {
   echo "Something has been broken in your HA cluster."
   echo ""
   echo "  kubectl get nodes -o wide"
-  echo "  curl -sk https://192.168.122.100:6443/healthz"
-  echo "  curl -su admin:admin http://192.168.122.1:9000/stats"
+  echo "  curl -sk https://192.168.100.100:6443/healthz"
+  echo "  curl -su admin:admin http://192.168.100.1:9000/stats"
   echo ""
   echo "To reset: $0 --reset"
   echo "============================================="
@@ -138,19 +138,19 @@ scenario_1() {
 
 # Difficulty: Intermediate | Concept: HAProxy backend IP misconfiguration | Symptom: VIP connects but API returns TLS errors; direct access still works
 scenario_2() {
-  sudo sed -i 's|server controlplane-1 192.168.122.10:6443|server controlplane-1 192.168.122.10:9999|' \
+  sudo sed -i 's|server controlplane-1 192.168.100.20:6443|server controlplane-1 192.168.100.20:9999|' \
     /etc/haproxy/haproxy.cfg
   sudo systemctl reload haproxy
 }
 
 # Difficulty: Advanced | Concept: VIP address removed from host bridge | Symptom: VIP unreachable; direct control plane access still works; kubectl fails
 scenario_3() {
-  sudo ip addr del 192.168.122.100/32 dev br0 2>/dev/null || true
+  sudo ip addr del 192.168.100.100/32 dev br-vm 2>/dev/null || true
 }
 
 # Difficulty: Intermediate | Concept: HAProxy frontend port | Symptom: HAProxy runs but VIP port is wrong; all kubectl commands fail
 scenario_4() {
-  sudo sed -i 's|bind 192.168.122.100:6443|bind 192.168.122.100:6444|' /etc/haproxy/haproxy.cfg
+  sudo sed -i 's|bind 192.168.100.100:6443|bind 192.168.100.100:6444|' /etc/haproxy/haproxy.cfg
   sudo systemctl reload haproxy
 }
 
@@ -165,7 +165,7 @@ scenario_5() {
 # Difficulty: Intermediate | Concept: second API server advertise address | Symptom: controlplane-2 API server crashes; controlplane-1 still handles traffic
 scenario_6() {
   backup_if_needed controlplane-2 /etc/kubernetes/manifests/kube-apiserver.yaml
-  run_on controlplane-2 "sed -i 's|--advertise-address=192.168.122.11|--advertise-address=192.168.122.99|' \
+  run_on controlplane-2 "sed -i 's|--advertise-address=192.168.100.21|--advertise-address=192.168.100.99|' \
     /etc/kubernetes/manifests/kube-apiserver.yaml"
 }
 
@@ -186,7 +186,7 @@ scenario_8() {
 # Difficulty: Beginner | Concept: kubelet kubeconfig server URL | Symptom: nodes-1 goes NotReady; other workers unaffected
 scenario_9() {
   backup_if_needed nodes-1 /etc/kubernetes/kubelet.conf
-  run_on nodes-1 "sed -i 's|server: https://192.168.122.100:6443|server: https://192.168.122.100:7777|' \
+  run_on nodes-1 "sed -i 's|server: https://192.168.100.100:6443|server: https://192.168.100.100:7777|' \
     /etc/kubernetes/kubelet.conf && systemctl restart kubelet"
 }
 
@@ -243,11 +243,11 @@ reset_all() {
 
   # Restore HAProxy
   echo "--- Restoring HAProxy ---"
-  sudo sed -i 's|server controlplane-1 192.168.122.10:9999|server controlplane-1 192.168.122.10:6443|' \
+  sudo sed -i 's|server controlplane-1 192.168.100.20:9999|server controlplane-1 192.168.100.20:6443|' \
     /etc/haproxy/haproxy.cfg 2>/dev/null || true
-  sudo sed -i 's|bind 192.168.122.100:6444|bind 192.168.122.100:6443|' \
+  sudo sed -i 's|bind 192.168.100.100:6444|bind 192.168.100.100:6443|' \
     /etc/haproxy/haproxy.cfg 2>/dev/null || true
-  sudo ip addr add 192.168.122.100/32 dev br0 2>/dev/null || true
+  sudo ip addr add 192.168.100.100/32 dev br-vm 2>/dev/null || true
   sudo systemctl start haproxy 2>/dev/null || true
   sudo systemctl reload haproxy 2>/dev/null || true
 
@@ -297,7 +297,7 @@ REMOTE
   sleep 20
 
   echo "=== Cluster status ==="
-  curl -sk https://192.168.122.100:6443/healthz && echo " (VIP ok)" || echo " (VIP still recovering)"
+  curl -sk https://192.168.100.100:6443/healthz && echo " (VIP ok)" || echo " (VIP still recovering)"
   $CP1_SSH "kubectl get nodes -o wide" 2>/dev/null || echo "  apiserver not yet ready"
 }
 

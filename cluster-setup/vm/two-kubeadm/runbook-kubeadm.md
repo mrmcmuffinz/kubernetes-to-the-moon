@@ -164,12 +164,12 @@ Use this hash in the join command's `--discovery-token-ca-cert-hash sha256:...`.
 ### Cert SAN Missing
 
 ```
-x509: certificate is valid for 192.168.122.10, but not for ...
+x509: certificate is valid for 192.168.100.10, but not for ...
 ```
 
 The IP or hostname being joined to was not in the kubeadm config's `certSANs`. Two options:
 
-1. Use an IP or name that is in the SANs (`192.168.122.10` always is).
+1. Use an IP or name that is in the SANs (`192.168.100.10` always is).
 2. Renew the apiserver cert with new SANs:
 
 ```bash

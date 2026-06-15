@@ -1,16 +1,23 @@
-# Kubernetes from Scratch: VM-Based Cluster Guides
+# Kubernetes from Scratch: VM and Pi Cluster Guides
 
-This directory contains six guides for building Kubernetes clusters on QEMU/KVM virtual
-machines. Two guides use manual systemd configuration to show how Kubernetes works under
-the hood; four use `kubeadm` to match the exam environment and scale from a single node
-to a five-node HA cluster.
+This directory contains guides for building Kubernetes clusters on QEMU/KVM virtual
+machines and on physical Raspberry Pi 5 hardware. Two VM guides use manual systemd
+configuration to show how Kubernetes works under the hood; the rest use `kubeadm` to
+match the exam environment. A separate Pi track builds a three-node ARM64 kubeadm
+cluster on dedicated hardware for hands-on exam practice.
 
 These guides are optional and not required for CKA exam preparation. The main exercises
 in this repository (`exercises/`) are built around kind clusters, which start fast, clean
-up easily, and closely match the exam environment. The VM-based guides exist for learners
-who find that understanding the internals makes the exam topics click.
+up easily, and closely match the exam environment. The VM and Pi guides exist for learners
+who find that understanding the internals makes the exam topics click, or who want a
+persistent cluster to practice on.
 
-## The Six Guides
+## VM Guides
+
+**Network prerequisite for multi-node VM guides:** All multi-node QEMU clusters (two-kubeadm,
+three-kubeadm, ha-kubeadm) use a VLAN-isolated host bridge rather than NAT. Complete
+[`vm/00-vlan-host-network-setup.md`](vm/00-vlan-host-network-setup.md) before starting
+any of those guides. Single-node and two-systemd guides are unaffected.
 
 | Guide | Install Method | Nodes | Time Estimate | Purpose |
 |-------|----------------|-------|---------------|---------|
@@ -21,7 +28,20 @@ who find that understanding the internals makes the exam topics click.
 | [`vm/three-kubeadm`](vm/three-kubeadm/) | kubeadm | 3 (1 CP + 2 workers) | 1.5 hours | Scheduling across multiple workers, drain and upgrade practice |
 | [`vm/ha-kubeadm`](vm/ha-kubeadm/) | kubeadm + HAProxy | 5 (2 CP + 3 workers) | 2-2.5 hours | HA control plane, second control plane join, VIP load balancing |
 
-All guides target Kubernetes v1.35.3 (the CKA exam version) and use Ubuntu 24.04 LTS guest VMs.
+All VM guides target Kubernetes v1.35.3 (the CKA exam version) and use Ubuntu 24.04 LTS guest VMs.
+
+## Pi Cluster Guide
+
+The [`pi/`](pi/) track builds a three-node kubeadm cluster on Raspberry Pi 5 8GB hardware
+running Ubuntu Server 24.04 LTS (ARM64). It targets the same Kubernetes version (v1.35.3)
+and installs the same Calico CNI as the VM guides. Use this cluster as a persistent
+practice environment that stays up between sessions.
+
+| Guide | Nodes | Time Estimate | Purpose |
+|-------|-------|---------------|---------|
+| [`pi/`](pi/) | 3 (1 CP + 2 workers, ARM64) | ~90 minutes | Physical kubeadm cluster for persistent CKA exam practice |
+
+See [`pi/README.md`](pi/README.md) for the full guide list and component version table.
 
 ### Single-Systemd: The Deepest Dive
 
@@ -51,7 +71,7 @@ The [`vm/three-kubeadm`](vm/three-kubeadm/) guide extends the two-node setup to 
 
 ### HA-Kubeadm: High Availability Control Plane
 
-The [`vm/ha-kubeadm`](vm/ha-kubeadm/) guide builds a five-node cluster with two control plane nodes and three workers. A HAProxy instance on the host bridge serves as the control plane VIP (`192.168.122.100:6443`), and `kubeadm init --upload-certs` + `kubeadm join --control-plane` handle the stacked-etcd HA join. This is the guide to use if you want to practice the `kubeadm join --control-plane` workflow, understand how `controlPlaneEndpoint` works, see how etcd quorum changes when a control plane node goes down, and test HAProxy health-check-driven failover.
+The [`vm/ha-kubeadm`](vm/ha-kubeadm/) guide builds a five-node cluster with two control plane nodes and three workers. A HAProxy instance on the host bridge serves as the control plane VIP (`192.168.100.100:6443`), and `kubeadm init --upload-certs` + `kubeadm join --control-plane` handle the stacked-etcd HA join. This is the guide to use if you want to practice the `kubeadm join --control-plane` workflow, understand how `controlPlaneEndpoint` works, see how etcd quorum changes when a control plane node goes down, and test HAProxy health-check-driven failover.
 
 ## Is This For You?
 

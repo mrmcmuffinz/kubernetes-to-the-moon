@@ -26,18 +26,18 @@ Create `~/kubeadm-init.yaml`:
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration
 localAPIEndpoint:
-  advertiseAddress: "192.168.122.10"
+  advertiseAddress: "192.168.100.10"
   bindPort: 6443
 ---
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration
 kubernetesVersion: "v1.35.3"
-controlPlaneEndpoint: "192.168.122.10:6443"
+controlPlaneEndpoint: "192.168.100.10:6443"
 networking:
   serviceSubnet: "10.96.0.0/16"
   podSubnet: "10.244.0.0/16"
 certSANs:
-  - "192.168.122.10"
+  - "192.168.100.10"
   - "127.0.0.1"
   - "localhost"
   - "controlplane-1"
@@ -102,7 +102,7 @@ kubectl get nodes
 | kubelet kubeconfig | `/var/lib/kubelet/kubeconfig` | `/etc/kubernetes/kubelet.conf` |
 | admin kubeconfig | `~/auth/admin.kubeconfig` | `/etc/kubernetes/admin.conf` |
 
-**Result:** Kubernetes API reachable at `https://192.168.122.10:6443`. `controlplane-1`
+**Result:** Kubernetes API reachable at `https://192.168.100.10:6443`. `controlplane-1`
 is `NotReady` (no CNI yet).
 
 ---

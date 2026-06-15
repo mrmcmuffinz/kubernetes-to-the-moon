@@ -6,11 +6,10 @@ Pull-through registry caches solve this. Install them once on the host, configur
 
 **What is cached:** All container images pulled from docker.io (nginx, redis, busybox, rancher local-path-provisioner, some CNIs), registry.k8s.io (all Kubernetes components), quay.io (Calico, Cilium), and ghcr.io (GitHub packages). Four separate registry cache instances run on the host, one for each upstream registry, because the Docker Registry software can only proxy to a single upstream per instance.
 
-**Network mode note:** The guides use several different VM networking modes, which determine the host IP that VMs use to reach the caches.
+**Network mode note:** The guides use two VM networking modes, which determine the host IP that VMs use to reach the caches.
 
 - Single-node guides (`single-systemd`, `single-kubeadm`) use QEMU user-mode networking. The host is reachable from inside the VM at `10.0.2.2`.
-- Multi-node guides with **Option A** (software NAT bridge) assign `br0` the IP `192.168.122.1` and NAT VM traffic through the host uplink. The host bridge IP is `192.168.122.1`.
-- Multi-node guides with **Option B** (physical NIC bridge) slave a spare NIC to `br0` and assign it a static IP in your physical LAN range. The host bridge IP is whatever you set in the Netplan config, for example `192.168.2.200`. Substitute that address wherever `192.168.122.1` appears in this document.
+- Multi-node guides (`two-kubeadm`, `three-kubeadm`, `ha-kubeadm`) attach VMs to a VLAN-isolated host bridge (`br-vm`). The host bridge IP is `192.168.100.2`. Use that address wherever `CACHE_HOST` appears in this document.
 
 **Installation method note:** The CKA lab setup guides use two different containerd installation methods, which affect the runc binary location:
 
@@ -69,25 +68,16 @@ flowchart TB
         VM1 -->|"containerd mirrors point to<br/>http://10.0.2.2:6001-6004"| Host1
     end
 
-    subgraph OptA["Option A: NAT Bridge (two-kubeadm default)"]
-        VMa1[controlplane-1<br/>192.168.122.10]
-        VMa2[nodes-1<br/>192.168.122.11]
-        Br0a[br0: 192.168.122.1<br/>Registries: 192.168.122.1:6001-6004]
-        VMa1 -->|"containerd mirrors point to<br/>http://192.168.122.1:6001-6004"| Br0a
-        VMa2 -->|"containerd mirrors point to<br/>http://192.168.122.1:6001-6004"| Br0a
-    end
-
-    subgraph OptB["Option B: Physical Bridge"]
-        VMb1[controlplane-1<br/>192.168.2.210]
-        VMb2[nodes-1<br/>192.168.2.211]
-        Br0b[br0: 192.168.2.200<br/>Registries: 192.168.2.200:6001-6004]
-        VMb1 -->|"containerd mirrors point to<br/>http://192.168.2.200:6001-6004"| Br0b
-        VMb2 -->|"containerd mirrors point to<br/>http://192.168.2.200:6001-6004"| Br0b
+    subgraph VLAN["Multi-Node: VLAN Bridge (two-kubeadm, three-kubeadm, ha-kubeadm)"]
+        VMa1[controlplane-1<br/>192.168.100.10]
+        VMa2[nodes-1<br/>192.168.100.11]
+        BrVM[br-vm: 192.168.100.2<br/>Registries: 192.168.100.2:6001-6004]
+        VMa1 -->|"containerd mirrors point to<br/>http://192.168.100.2:6001-6004"| BrVM
+        VMa2 -->|"containerd mirrors point to<br/>http://192.168.100.2:6001-6004"| BrVM
     end
 
     Host1 -.->|nerdctl compose<br/>manages all caches| compose_stack
-    Br0a -.->|nerdctl compose<br/>manages all caches| compose_stack
-    Br0b -.->|nerdctl compose<br/>manages all caches| compose_stack
+    BrVM -.->|nerdctl compose<br/>manages all caches| compose_stack
 
     compose_stack[nerdctl compose stack<br/>4 registry containers] -->|6001: HTTPS| docker[registry-1.docker.io]
     compose_stack -->|6002: HTTPS| k8s[registry.k8s.io]
@@ -414,7 +404,7 @@ nerdctl compose ps
 
 VMs need their containerd configuration updated to use the registry caches as mirrors. The configuration format is `/etc/containerd/config.toml` with registry mirror blocks for each upstream. There are two approaches: manual configuration after the VM boots, or baked into cloud-init for new VMs.
 
-### Option A: Manual Configuration (Post-Boot)
+### Manual Configuration (Post-Boot)
 
 SSH into the VM and edit `/etc/containerd/config.toml`. Add the registry mirrors block after the existing runtime configuration.
 
@@ -446,7 +436,7 @@ version = 3
 EOF
 ```
 
-**For multi-node guides with Option A (software NAT bridge, host at `192.168.122.1`):**
+**For multi-node guides (VLAN bridge, host bridge `br-vm` at `192.168.100.2`):**
 
 ```bash
 sudo tee /etc/containerd/config.toml > /dev/null << 'EOF'
@@ -464,43 +454,13 @@ version = 3
   config_path = ''
   [plugins.'io.containerd.cri.v1.images'.registry.mirrors]
     [plugins.'io.containerd.cri.v1.images'.registry.mirrors."docker.io"]
-      endpoint = ["http://192.168.122.1:6001"]
+      endpoint = ["http://192.168.100.2:6001"]
     [plugins.'io.containerd.cri.v1.images'.registry.mirrors."registry.k8s.io"]
-      endpoint = ["http://192.168.122.1:6002"]
+      endpoint = ["http://192.168.100.2:6002"]
     [plugins.'io.containerd.cri.v1.images'.registry.mirrors."quay.io"]
-      endpoint = ["http://192.168.122.1:6003"]
+      endpoint = ["http://192.168.100.2:6003"]
     [plugins.'io.containerd.cri.v1.images'.registry.mirrors."ghcr.io"]
-      endpoint = ["http://192.168.122.1:6004"]
-EOF
-```
-
-**For multi-node guides with Option B (physical NIC bridge):**
-
-Replace `192.168.2.200` with the address assigned to `br0` in your `10-br0.yaml` Netplan config.
-
-```bash
-sudo tee /etc/containerd/config.toml > /dev/null << 'EOF'
-version = 3
-
-[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc]
-  runtime_type = 'io.containerd.runc.v2'
-  [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
-    SystemdCgroup = true
-    # BinaryName: Use '/usr/local/bin/runc' for binary-cache setups
-    #             Use '/usr/sbin/runc' for apt-installed containerd
-    BinaryName = '/usr/local/bin/runc'
-
-[plugins.'io.containerd.cri.v1.images'.registry]
-  config_path = ''
-  [plugins.'io.containerd.cri.v1.images'.registry.mirrors]
-    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."docker.io"]
-      endpoint = ["http://192.168.2.200:6001"]
-    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."registry.k8s.io"]
-      endpoint = ["http://192.168.2.200:6002"]
-    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."quay.io"]
-      endpoint = ["http://192.168.2.200:6003"]
-    [plugins.'io.containerd.cri.v1.images'.registry.mirrors."ghcr.io"]
-      endpoint = ["http://192.168.2.200:6004"]
+      endpoint = ["http://192.168.100.2:6004"]
 EOF
 ```
 
@@ -531,7 +491,7 @@ nerdctl logs registry-docker-io | tail -20
 
 You should see lines showing manifest and blob fetches for `library/nginx`.
 
-### Option B: cloud-init (New VMs)
+### cloud-init (New VMs)
 
 If you are creating a fresh VM and want the registry mirrors active from the first image pull, add a `write_files` entry to the cloud-init `user-data` for the node. Cloud-init applies `write_files` before it runs `runcmd`, so the mirrors are in place before kubeadm pulls component images.
 
@@ -566,7 +526,7 @@ write_files:
     permissions: '0644'
 ```
 
-**For multi-node guides with Option A (NAT bridge):**
+**For multi-node guides (VLAN bridge, host bridge at `192.168.100.2`):**
 
 ```yaml
 write_files:
@@ -585,44 +545,13 @@ write_files:
         config_path = ''
         [plugins.'io.containerd.cri.v1.images'.registry.mirrors]
           [plugins.'io.containerd.cri.v1.images'.registry.mirrors."docker.io"]
-            endpoint = ["http://192.168.122.1:6001"]
+            endpoint = ["http://192.168.100.2:6001"]
           [plugins.'io.containerd.cri.v1.images'.registry.mirrors."registry.k8s.io"]
-            endpoint = ["http://192.168.122.1:6002"]
+            endpoint = ["http://192.168.100.2:6002"]
           [plugins.'io.containerd.cri.v1.images'.registry.mirrors."quay.io"]
-            endpoint = ["http://192.168.122.1:6003"]
+            endpoint = ["http://192.168.100.2:6003"]
           [plugins.'io.containerd.cri.v1.images'.registry.mirrors."ghcr.io"]
-            endpoint = ["http://192.168.122.1:6004"]
-    permissions: '0644'
-```
-
-**For multi-node guides with Option B (physical NIC bridge):**
-
-Replace `192.168.2.200` with your bridge IP.
-
-```yaml
-write_files:
-  - path: /etc/containerd/config.toml
-    content: |
-      version = 3
-
-      [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc]
-        runtime_type = 'io.containerd.runc.v2'
-        [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
-          SystemdCgroup = true
-          # Use '/usr/local/bin/runc' for binary-cache, '/usr/sbin/runc' for apt
-          BinaryName = '/usr/local/bin/runc'
-
-      [plugins.'io.containerd.cri.v1.images'.registry]
-        config_path = ''
-        [plugins.'io.containerd.cri.v1.images'.registry.mirrors]
-          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."docker.io"]
-            endpoint = ["http://192.168.2.200:6001"]
-          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."registry.k8s.io"]
-            endpoint = ["http://192.168.2.200:6002"]
-          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."quay.io"]
-            endpoint = ["http://192.168.2.200:6003"]
-          [plugins.'io.containerd.cri.v1.images'.registry.mirrors."ghcr.io"]
-            endpoint = ["http://192.168.2.200:6004"]
+            endpoint = ["http://192.168.100.2:6004"]
     permissions: '0644'
 ```
 
@@ -762,14 +691,13 @@ sudo ufw allow 6001:6004/tcp
 **VM cannot reach host IP**
 
 Verify the correct host IP for the networking mode:
-- User-mode (single-node): `10.0.2.2`
-- NAT bridge (two-node Option A): `192.168.122.1`
-- Physical bridge (two-node Option B): `br0` IP from Netplan (e.g., `192.168.2.200`)
+- User-mode (single-node guides): `10.0.2.2`
+- VLAN bridge (multi-node guides): `192.168.100.2` (host bridge `br-vm`)
 
 From the VM, test connectivity:
 
 ```bash
-curl http://10.0.2.2:6001/v2/  # or appropriate host IP
+curl http://192.168.100.2:6001/v2/  # or 10.0.2.2 for single-node
 ```
 
 **Images not being cached**
@@ -932,9 +860,8 @@ This deletes layers not referenced by any manifest. Run periodically or when cac
 | Cache storage | `~/cka-lab/registry-cache/{docker-io,k8s-io,quay-io,ghcr-io}/` |
 | systemd service | `~/.config/systemd/user/registry-cache.service` |
 | VM containerd config | `/etc/containerd/config.toml` with registry mirrors |
-| Mirror URLs (user-mode networking) | `http://10.0.2.2:6001-6004` |
-| Mirror URLs (multi-node Option A, NAT bridge) | `http://192.168.122.1:6001-6004` |
-| Mirror URLs (multi-node Option B, physical NIC) | `http://<br0-ip>:6001-6004` (your Netplan address) |
+| Mirror URLs (user-mode networking, single-node guides) | `http://10.0.2.2:6001-6004` |
+| Mirror URLs (VLAN bridge, multi-node guides) | `http://192.168.100.2:6001-6004` |
 | Registries cached | docker.io, registry.k8s.io, quay.io, ghcr.io |
 | Common images cached | nginx, redis, busybox (docker.io); pause, kube-apiserver, etcd, coredns (registry.k8s.io); calico, cilium (quay.io) |
 | Start caches | `cd ~/cka-lab/registry-cache && nerdctl compose up -d` |

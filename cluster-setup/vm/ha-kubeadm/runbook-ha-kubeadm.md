@@ -42,7 +42,7 @@ ssh controlplane-1 '
 '
 
 # HAProxy stats
-curl -su admin:admin http://192.168.122.1:9000/stats | grep -E "controlplane|Status"
+curl -su admin:admin http://192.168.100.1:9000/stats | grep -E "controlplane|Status"
 ```
 
 ---
@@ -72,8 +72,8 @@ if both stay down:
 
 ```bash
 # Direct check against each control plane
-curl -sk https://192.168.122.10:6443/healthz
-curl -sk https://192.168.122.11:6443/healthz
+curl -sk https://192.168.100.20:6443/healthz
+curl -sk https://192.168.100.21:6443/healthz
 
 # If one responds, check HAProxy config for IP typo
 grep backend /etc/haproxy/haproxy.cfg
@@ -83,7 +83,7 @@ grep backend /etc/haproxy/haproxy.cfg
 
 ```bash
 grep server ~/cka-lab/ha-kubeadm/admin.conf
-# Must be https://192.168.122.100:6443 (the VIP)
+# Must be https://192.168.100.100:6443 (the VIP)
 # If it shows a node IP directly, regenerate from controlplane-1:
 scp controlplane-1:/etc/kubernetes/admin.conf ~/cka-lab/ha-kubeadm/admin.conf
 ```
@@ -177,7 +177,7 @@ kubectl -n calico-system describe pod -l k8s-app=calico-node -l kubernetes.io/ho
 ### API Server on controlplane-2 Not Accessible Directly
 
 ```bash
-curl -sk https://192.168.122.11:6443/healthz
+curl -sk https://192.168.100.21:6443/healthz
 ssh controlplane-2 'sudo crictl ps | grep apiserver'
 ssh controlplane-2 'sudo crictl logs $(sudo crictl ps -q --name kube-apiserver 2>/dev/null) 2>/dev/null | tail -30'
 ```
@@ -287,9 +287,9 @@ ssh controlplane-1 '
   sudo ETCDCTL_API=3 etcdctl snapshot restore /tmp/etcd-backup.db \
     --data-dir /var/lib/etcd \
     --name controlplane-1 \
-    --initial-cluster "controlplane-1=https://192.168.122.10:2380,controlplane-2=https://192.168.122.11:2380" \
+    --initial-cluster "controlplane-1=https://192.168.100.20:2380,controlplane-2=https://192.168.100.21:2380" \
     --initial-cluster-token etcd-cluster-1 \
-    --initial-advertise-peer-urls https://192.168.122.10:2380
+    --initial-advertise-peer-urls https://192.168.100.20:2380
   sudo chown -R root:root /var/lib/etcd
 '
 
@@ -300,9 +300,9 @@ ssh controlplane-2 '
   sudo ETCDCTL_API=3 etcdctl snapshot restore /tmp/etcd-backup.db \
     --data-dir /var/lib/etcd \
     --name controlplane-2 \
-    --initial-cluster "controlplane-1=https://192.168.122.10:2380,controlplane-2=https://192.168.122.11:2380" \
+    --initial-cluster "controlplane-1=https://192.168.100.20:2380,controlplane-2=https://192.168.100.21:2380" \
     --initial-cluster-token etcd-cluster-1 \
-    --initial-advertise-peer-urls https://192.168.122.11:2380
+    --initial-advertise-peer-urls https://192.168.100.21:2380
   sudo chown -R root:root /var/lib/etcd
 '
 

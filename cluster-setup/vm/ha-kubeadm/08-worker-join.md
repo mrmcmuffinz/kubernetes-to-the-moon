@@ -20,7 +20,7 @@ for node in nodes-1 nodes-2 nodes-3; do
   ssh "$node" '
     sudo crictl info 2>/dev/null | grep -q runtimeHandlers && echo "containerd: OK"
     free -h | grep Swap
-    curl -sk https://192.168.122.100:6443/healthz && echo " (VIP reachable)"
+    curl -sk https://192.168.100.100:6443/healthz && echo " (VIP reachable)"
   '
 done
 ```
@@ -34,7 +34,7 @@ JOIN_CMD=$(ssh controlplane-1 'kubeadm token create --print-join-command')
 echo "$JOIN_CMD"
 ```
 
-The join command points to the VIP (`192.168.122.100:6443`), not directly to either
+The join command points to the VIP (`192.168.100.100:6443`), not directly to either
 control plane node.
 
 ## Part 3: Join All Three Workers
@@ -50,7 +50,7 @@ done
 
 **Dual-NIC callout:** If you used Option C from document 02, pass a per-node config
 file so kubelet registers with the cluster NIC IP instead of the external NIC's DHCP
-address. Worker IPs are `192.168.122.12`, `.13`, `.14` for `nodes-1`, `nodes-2`,
+address. Worker IPs are `192.168.100.22`, `.13`, `.14` for `nodes-1`, `nodes-2`,
 `nodes-3` respectively.
 
 ```bash
@@ -59,7 +59,7 @@ HASH=$(ssh controlplane-1 'openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt |
   openssl rsa -pubin -outform der 2>/dev/null | \
   openssl dgst -sha256 -hex | sed "s/^.* //"')
 
-declare -A WORKER_IPS=( [nodes-1]=192.168.122.12 [nodes-2]=192.168.122.13 [nodes-3]=192.168.122.14 )
+declare -A WORKER_IPS=( [nodes-1]=192.168.100.22 [nodes-2]=192.168.100.23 [nodes-3]=192.168.100.24 )
 
 for node in nodes-1 nodes-2 nodes-3; do
   NODE_IP="${WORKER_IPS[$node]}"
@@ -68,7 +68,7 @@ apiVersion: kubeadm.k8s.io/v1beta4
 kind: JoinConfiguration
 discovery:
   bootstrapToken:
-    apiServerEndpoint: "192.168.122.100:6443"
+    apiServerEndpoint: "192.168.100.100:6443"
     token: ${TOKEN}
     caCertHashes:
       - sha256:${HASH}

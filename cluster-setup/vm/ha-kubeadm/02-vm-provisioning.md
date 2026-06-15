@@ -10,7 +10,7 @@ two control planes and three workers.
 
 ## Prerequisites
 
-- `br0` is configured and HAProxy is running (document 01).
+- `br-vm` bridge is configured and HAProxy is running (document 01).
 - Ubuntu 24.04 cloud image is cached at `~/cka-lab/images/ubuntu-24.04-server-cloudimg-amd64.img`.
 - `qemu-system-x86_64`, `qemu-img`, and `genisoimage` are installed on the host.
 
@@ -18,11 +18,11 @@ two control planes and three workers.
 
 | Hostname | Bridge IP | Role |
 |----------|-----------|------|
-| `controlplane-1` | `192.168.122.10` | First control plane |
-| `controlplane-2` | `192.168.122.11` | Second control plane |
-| `nodes-1` | `192.168.122.12` | Worker |
-| `nodes-2` | `192.168.122.13` | Worker |
-| `nodes-3` | `192.168.122.14` | Worker |
+| `controlplane-1` | `192.168.100.20` | First control plane |
+| `controlplane-2` | `192.168.100.21` | Second control plane |
+| `nodes-1` | `192.168.100.22` | Worker |
+| `nodes-2` | `192.168.100.23` | Worker |
+| `nodes-3` | `192.168.100.24` | Worker |
 
 ## Part 1: Directory Structure
 
@@ -103,7 +103,7 @@ write_files:
             addresses: [${ip}/24]
             routes:
               - to: default
-                via: 192.168.122.1
+                via: 192.168.100.1
             nameservers:
               addresses: [8.8.8.8, 8.8.4.4]
 
@@ -134,11 +134,11 @@ EOF
   echo "Node $name configured at $node_dir"
 }
 
-generate_node controlplane-1 192.168.122.10
-generate_node controlplane-2 192.168.122.11
-generate_node nodes-1        192.168.122.12
-generate_node nodes-2        192.168.122.13
-generate_node nodes-3        192.168.122.14
+generate_node controlplane-1 192.168.100.20
+generate_node controlplane-2 192.168.100.21
+generate_node nodes-1        192.168.100.22
+generate_node nodes-2        192.168.100.23
+generate_node nodes-3        192.168.100.24
 ```
 
 ## Part 3: Per-Node Start and Stop Scripts
@@ -160,7 +160,7 @@ qemu-system-x86_64 \\
     -cpu host -smp 2 -m 4096 \\
     -drive file="\$SCRIPT_DIR/${name}.qcow2",format=qcow2,if=virtio \\
     -drive file="\$SCRIPT_DIR/seed.iso",format=raw,if=virtio \\
-    -netdev bridge,id=net0,br=br0 \\
+    -netdev bridge,id=net0,br=br-vm \\
     -device virtio-net-pci,netdev=net0 \\
     -display none \\
     -serial file:"\$SCRIPT_DIR/${name}-console.log" \\
@@ -252,12 +252,12 @@ kubeadm prerequisites met.
 
 ## Option C: Dual-NIC Setup (Separate Cluster and External Traffic)
 
-By default each VM has one NIC on `br0` that carries all traffic: inter-node Kubernetes
+By default each VM has one NIC on `br-vm` that carries all traffic: inter-node Kubernetes
 communication, image pulls, package installs, and SSH. This is fine for exam prep, but
 a more realistic production-like setup separates:
 
 - **NIC 0 (`enp0s2`):** cluster network -- all Kubernetes traffic (apiserver, etcd,
-  kubelet, pod-to-pod via Calico VXLAN). Static IP on `192.168.122.x`, no default route.
+  kubelet, pod-to-pod via Calico VXLAN). Static IP on `192.168.100.x`, no default route.
 - **NIC 1 (`enp0s3`):** external network -- image pulls, package installs, internet.
   QEMU user-mode NAT, DHCP, default route.
 
@@ -379,11 +379,11 @@ EOF
   echo "Node $name (dual-NIC) configured at $node_dir"
 }
 
-generate_node_dual_nic controlplane-1 192.168.122.10
-generate_node_dual_nic controlplane-2 192.168.122.11
-generate_node_dual_nic nodes-1        192.168.122.12
-generate_node_dual_nic nodes-2        192.168.122.13
-generate_node_dual_nic nodes-3        192.168.122.14
+generate_node_dual_nic controlplane-1 192.168.100.20
+generate_node_dual_nic controlplane-2 192.168.100.21
+generate_node_dual_nic nodes-1        192.168.100.22
+generate_node_dual_nic nodes-2        192.168.100.23
+generate_node_dual_nic nodes-3        192.168.100.24
 ```
 
 ### Modified make_scripts Function (Second QEMU NIC)
@@ -408,7 +408,7 @@ qemu-system-x86_64 \\
     -cpu host -smp 2 -m 4096 \\
     -drive file="\$SCRIPT_DIR/${name}.qcow2",format=qcow2,if=virtio \\
     -drive file="\$SCRIPT_DIR/seed.iso",format=raw,if=virtio \\
-    -netdev bridge,id=net0,br=br0 \\
+    -netdev bridge,id=net0,br=br-vm \\
     -device virtio-net-pci,netdev=net0 \\
     -netdev user,id=net1 \\
     -device virtio-net-pci,netdev=net1 \\
@@ -464,8 +464,8 @@ ssh controlplane-1 '
   # Expected: default via 10.0.2.2 dev enp0s3 (user-mode gateway)
 
   echo "=== Cluster subnet route ==="
-  ip route show 192.168.122.0/24
-  # Expected: 192.168.122.0/24 dev enp0s2
+  ip route show 192.168.100.0/24
+  # Expected: 192.168.100.0/24 dev enp0s2
 
   echo "=== Internet access (via enp0s3) ==="
   curl -s --max-time 5 https://dl.k8s.io/release/stable.txt && echo " OK"

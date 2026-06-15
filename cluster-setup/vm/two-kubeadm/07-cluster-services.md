@@ -157,14 +157,7 @@ If `kubectl top nodes` returns "metrics not available", give it another 30 secon
 
 ## Part 4: MetalLB (Optional)
 
-### Option B Users: IP Address Pool Substitution
 
-If you followed **Option B (physical NIC bridge)** in document 01, the MetalLB IP address pool in Step 2 assumes Option A networking and must be replaced with an available range from your physical LAN.
-
-Refer to the [IP mapping table in document 02](02-vm-provisioning.md#option-b-users-ip-substitution) for the complete substitution reference.
-
-For the MetalLB IPAddressPool, replace:
-- `192.168.122.200-192.168.122.220` → a range from your physical network that does not overlap with your VMs or other devices (e.g., `192.168.2.220-192.168.2.240`)
 
 Choose a range that:
 - Is on the same subnet as your bridge and VMs
@@ -196,7 +189,7 @@ metadata:
   namespace: metallb-system
 spec:
   addresses:
-    - 192.168.122.200-192.168.122.220
+    - 192.168.100.200-192.168.100.220
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
@@ -218,7 +211,7 @@ kubectl expose deployment lb-test --port=80 --type=LoadBalancer
 # Wait for MetalLB to assign an IP
 sleep 5
 kubectl get svc lb-test
-# EXTERNAL-IP should be in 192.168.122.200-220
+# EXTERNAL-IP should be in 192.168.100.200-220
 
 # Reach it from the host
 LB_IP=$(kubectl get svc lb-test -o jsonpath='{.status.loadBalancer.ingress[0].ip}')

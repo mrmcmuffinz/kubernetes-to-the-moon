@@ -4,13 +4,13 @@
 
 **Purpose:** Create three headless Ubuntu 24.04 VMs on the host bridge with static IPs
 and cloud-init. The process is identical to the two-node guide but extended to cover a
-third VM (`nodes-2` at `192.168.122.12`).
+third VM (`nodes-2` at `192.168.100.12`).
 
 ---
 
 ## Prerequisites
 
-- `br0` bridge is configured (document 01 or pre-existing from another guide).
+- `br-vm` bridge is configured (document 01 or pre-existing from another guide).
 - Ubuntu 24.04 cloud image is cached at `~/cka-lab/images/ubuntu-24.04-server-cloudimg-amd64.img`.
   If not, see `two-kubeadm/02-vm-provisioning.md` Part 1 for the download step.
 - `qemu-system-x86_64`, `qemu-img`, and `genisoimage` are installed on the host.
@@ -19,9 +19,9 @@ third VM (`nodes-2` at `192.168.122.12`).
 
 | Hostname | Bridge IP | Role |
 |----------|-----------|------|
-| `controlplane-1` | `192.168.122.10` | Control plane (static pods, etcd) |
-| `nodes-1` | `192.168.122.11` | Worker |
-| `nodes-2` | `192.168.122.12` | Worker |
+| `controlplane-1` | `192.168.100.10` | Control plane (static pods, etcd) |
+| `nodes-1` | `192.168.100.11` | Worker |
+| `nodes-2` | `192.168.100.12` | Worker |
 
 ## Part 1: Directory Structure
 
@@ -110,7 +110,7 @@ write_files:
             addresses: [${ip}/24]
             routes:
               - to: default
-                via: 192.168.122.1
+                via: 192.168.100.1
             nameservers:
               addresses: [8.8.8.8, 8.8.4.4]
 
@@ -143,9 +143,9 @@ EOF
   echo "Node $name configured at $node_dir"
 }
 
-generate_node controlplane-1 192.168.122.10
-generate_node nodes-1        192.168.122.11
-generate_node nodes-2        192.168.122.12
+generate_node controlplane-1 192.168.100.10
+generate_node nodes-1        192.168.100.11
+generate_node nodes-2        192.168.100.12
 ```
 
 ## Part 3: Per-Node Start and Stop Scripts
@@ -167,7 +167,7 @@ qemu-system-x86_64 \\
     -cpu host -smp 2 -m 4096 \\
     -drive file="\$SCRIPT_DIR/${name}.qcow2",format=qcow2,if=virtio \\
     -drive file="\$SCRIPT_DIR/seed.iso",format=raw,if=virtio \\
-    -netdev bridge,id=net0,br=br0 \\
+    -netdev bridge,id=net0,br=br-vm \\
     -device virtio-net-pci,netdev=net0 \\
     -display none \\
     -serial file:"\$SCRIPT_DIR/${name}-console.log" \\
@@ -274,7 +274,7 @@ done
 
 All nodes should show: no swap, both kernel modules loaded, both sysctls = 1.
 
-**Result:** Three VMs at `192.168.122.10`, `.11`, `.12` with static bridge IPs,
+**Result:** Three VMs at `192.168.100.10`, `.11`, `.12` with static bridge IPs,
 kubeadm prerequisites met.
 
 ---

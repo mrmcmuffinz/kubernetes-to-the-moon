@@ -8,42 +8,22 @@
 
 ## What This Chapter Does
 
-Creates two headless Ubuntu 24.04 VMs (`controlplane-1` and `nodes-1`) attached to the `br0` bridge from the previous document. Each VM gets a static IP via cloud-init, your SSH key, the `kube` user with passwordless sudo, kernel modules and sysctls for Kubernetes, and is rebooted once at the end of cloud-init so all changes take effect cleanly.
+Creates two headless Ubuntu 24.04 VMs (`controlplane-1` and `nodes-1`) attached to the `br-vm` bridge from the previous document. Each VM gets a static IP via cloud-init, your SSH key, the `kube` user with passwordless sudo, kernel modules and sysctls for Kubernetes, and is rebooted once at the end of cloud-init so all changes take effect cleanly.
 
 The single-node guide used QEMU user-mode networking and a single `create-node.sh` script. This guide uses bridge networking and a `create-cluster.sh` script that wraps `create-node.sh` to provision both VMs in a single command, plus cluster-level `start-cluster.sh` and `stop-cluster.sh`.
 
 ## What Was Removed from the Original Script
 
-- **Port forwarding for SSH and component APIs.** No longer needed. With real IPs on the bridge, you SSH directly to `192.168.122.10` or `192.168.122.11`, and `kubectl` from the host points at `https://192.168.122.10:6443`.
-- **`hostfwd` flags on the QEMU command line.** Replaced with `-netdev bridge,br=br0`.
+- **Port forwarding for SSH and component APIs.** No longer needed. With real IPs on the bridge, you SSH directly to `192.168.100.10` or `192.168.100.11`, and `kubectl` from the host points at `https://192.168.100.10:6443`.
+- **`hostfwd` flags on the QEMU command line.** Replaced with `-netdev bridge,br=br-vm`.
 - **`network: config: disabled`** in cloud-init. The single-node guide disabled cloud-init networking because QEMU user-mode handled DHCP. With a physical LAN bridge, cloud-init still generates `/etc/netplan/50-cloud-init.yaml` with DHCP at boot. The `runcmd` block removes that file before applying Netplan, leaving only the static config from `write_files`.
-
-## Option B Users: IP Substitution
-
-If you followed Option B in document 01 (physical NIC bridge), the defaults in this
-document use `192.168.122.x` and must be replaced. The configuration block at the top
-of the script in Part 2 is the single place to make all changes. Parts 4 and 5 also
-reference these IPs directly -- substitute accordingly.
-
-The reference mapping for a physical network at `192.168.2.0/24`:
-
-| Purpose | Option A (NAT bridge) | Option B (physical NIC bridge) |
-|---------|-----------------------|-------------------------------|
-| Gateway | `192.168.122.1` | `192.168.2.1` |
-| `controlplane-1` | `192.168.122.10` | `192.168.2.210` |
-| `nodes-1` | `192.168.122.11` | `192.168.2.211` |
 
 ## Prerequisites
 
 The host bridge from document 01 must be active. Quick check:
 
 ```bash
-# Option A
-ip addr show br0 | grep 'inet 192.168.122.1' && echo "bridge OK"
-
-# Option B (replace 192.168.2.200 with your bridge IP if different)
-ip addr show br0 | grep 'inet 192.168.2.200' && echo "bridge OK"
-
+ip addr show br-vm | grep 'inet 192.168.100.2' && echo "bridge OK"
 ls -la /usr/lib/qemu/qemu-bridge-helper | grep '^-rws' && echo "helper OK"
 ```
 
@@ -112,16 +92,16 @@ Save the following as `~/cka-lab/two-kubeadm/create-cluster.sh` and make it exec
 # create-cluster.sh
 #
 # Provisions two headless Ubuntu 24.04 VMs (controlplane-1, nodes-1) for the two-kubeadm
-# Kubernetes cluster lab. Both VMs attach to the host bridge br0 from
+# Kubernetes cluster lab. Both VMs attach to the host bridge br-vm from
 # 01-host-bridge-setup.md.
 #
 # Usage:
 #   ./create-cluster.sh                                              # both VMs, default IPs
 #   ./create-cluster.sh controlplane-1                               # one VM only
 #   ./create-cluster.sh nodes-1                                      # one VM only
-#   ./create-cluster.sh --gateway 192.168.2.1 \
-#                       --cp-ip 192.168.2.210 \
-#                       --worker-ip 192.168.2.211                    # Option B IPs
+#   ./create-cluster.sh --gateway 192.168.100.1 \
+#                       --cp-ip 192.168.100.10 \
+#                       --worker-ip 192.168.100.11                   # override defaults
 
 set -euo pipefail
 
@@ -143,13 +123,13 @@ DISK_SIZE="40G"
 VM_USER="kube"
 VM_PASSWORD="kubeadmin"
 
-BRIDGE="br0"
-GATEWAY="192.168.122.1"
+BRIDGE="br-vm"
+GATEWAY="192.168.100.1"
 
 # Per-node configuration
 declare -A NODES=(
-  [controlplane-1]="192.168.122.10"
-  [nodes-1]="192.168.122.11"
+  [controlplane-1]="192.168.100.10"
+  [nodes-1]="192.168.100.11"
 )
 
 # -------------------------------------------------------------------
@@ -544,33 +524,17 @@ tail -f controlplane-1/controlplane-1-console.log
 
 ## Part 4: Configure SSH Access
 
-Add the following to `~/.ssh/config` on the host so `ssh controlplane-1` and `ssh nodes-1` work without flags. Replace the `HostName` values with your Option B IPs if applicable.
+Add the following to `~/.ssh/config` on the host so `ssh controlplane-1` and `ssh nodes-1` work without flags.
 
 ```ssh-config
-# Option A (NAT bridge)
 Host controlplane-1
-    HostName 192.168.122.10
+    HostName 192.168.100.10
     User kube
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new
 
 Host nodes-1
-    HostName 192.168.122.11
-    User kube
-    IdentityFile ~/.ssh/id_ed25519
-    StrictHostKeyChecking accept-new
-```
-
-```ssh-config
-# Option B (physical NIC bridge) -- replace 192.168.2.210/211 with your chosen IPs
-Host controlplane-1
-    HostName 192.168.2.210
-    User kube
-    IdentityFile ~/.ssh/id_ed25519
-    StrictHostKeyChecking accept-new
-
-Host nodes-1
-    HostName 192.168.2.211
+    HostName 192.168.100.11
     User kube
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new
@@ -584,12 +548,10 @@ If your SSH key is at a different path, adjust the `IdentityFile` line according
 
 After cloud-init completes (60 to 90 seconds for the first boot, plus the reboot), verify everything is in place. Run from the host:
 
-Replace `192.168.122.10` / `192.168.122.11` with your Option B IPs if applicable.
-
 ```bash
 # Both VMs respond to ping
-ping -c 2 192.168.122.10   # Option B: 192.168.2.210
-ping -c 2 192.168.122.11   # Option B: 192.168.2.211
+ping -c 2 192.168.100.10
+ping -c 2 192.168.100.11
 
 # SSH works to both
 ssh controlplane-1 'hostname && ip -4 addr show enp0s2 | grep inet'
@@ -599,7 +561,7 @@ ssh nodes-1 'hostname && ip -4 addr show enp0s2 | grep inet'
 ssh controlplane-1 'ping -c 2 nodes-1'
 ssh nodes-1 'ping -c 2 controlplane-1'
 
-# Both have internet (Option A: via NAT on host; Option B: direct via router)
+# Both have internet (via UCG-Fiber gateway at 192.168.100.1)
 ssh controlplane-1 'curl -sI -o /dev/null -w "%{http_code}\n" https://kubernetes.io'
 ssh nodes-1 'curl -sI -o /dev/null -w "%{http_code}\n" https://kubernetes.io'
 
@@ -632,10 +594,10 @@ The cloud-init config does not install containerd, runc, kubeadm, kubelet, or ku
 
 The two VMs are now provisioned and accessible:
 
-| VM | Role (assigned later) | IP (Option A) | IP (Option B) | SSH Alias |
-|----|------------------------|----|-----------|---|
-| `controlplane-1` | Control plane | `192.168.122.10` | `192.168.2.210` | `ssh controlplane-1` |
-| `nodes-1` | Worker | `192.168.122.11` | `192.168.2.211` | `ssh nodes-1` |
+| VM | Role (assigned later) | IP | SSH Alias |
+|----|------------------------|----|-----------|
+| `controlplane-1` | Control plane | `192.168.100.10` | `ssh controlplane-1` |
+| `nodes-1` | Worker | `192.168.100.11` | `ssh nodes-1` |
 
 All cluster-level lifecycle commands:
 

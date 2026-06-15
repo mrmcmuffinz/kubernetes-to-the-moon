@@ -12,7 +12,7 @@ Follow these in order. Each document builds on the previous one.
 
 | # | Document | What It Does | Time |
 |---|----------|-------------|------|
-| 01 | [Host Bridge Setup](01-host-bridge-setup.md) | Configures `br0`, IP forwarding, NAT, and `qemu-bridge-helper` (identical to `two-kubeadm/01`) | 20-30 min |
+| 01 | [Host Network Setup](01-host-bridge-setup.md) | Confirms the VLAN-isolated bridge `br-vm` is configured per `00-vlan-host-network-setup.md` | 20-30 min (first time only) |
 | 02 | [VM Provisioning](02-vm-provisioning.md) | Creates three VMs (`controlplane-1`, `nodes-1`, `nodes-2`) with cloud-init and static bridge IPs | 20-25 min |
 | 03 | [Node Prerequisites](03-node-prerequisites.md) | Installs containerd, runc, CNI binaries, crictl, and the kubeadm toolchain on all three nodes | 10-15 min |
 | 04 | [Control Plane Init](04-control-plane-init.md) | Runs `kubeadm init` on `controlplane-1`, sets up `kubectl`, copies kubeconfig to host | 10-15 min |
@@ -36,9 +36,9 @@ Kubernetes v1.35 is the version the CKA exam currently targets.
 
 ## Network Configuration
 
-| CIDR | Purpose | Where It Appears |
-|------|---------|------------------|
-| `192.168.122.0/24` | Host bridge `br0` | VM IPs (`192.168.122.10`, `.11`, `.12`), host gateway (`192.168.122.1`), MetalLB pool (optional) |
+| CIDR / Address | Purpose | Where It Appears |
+|----------------|---------|------------------|
+| `192.168.100.0/24` | Lab-VMs VLAN 100, bridge `br-vm` | VM IPs (`.10`, `.11`, `.12`), host at `.2`, UCG-Fiber gateway at `.1`, MetalLB pool (optional) |
 | `10.96.0.0/16` | Service ClusterIP range | `kubeadm` `serviceSubnet`, CoreDNS ClusterIP (`10.96.0.10`), kubelet `clusterDNS`, `kubernetes` Service (`10.96.0.1`) |
 | `10.244.0.0/16` | Pod IP range | `kubeadm` `podSubnet`, Calico IPPool `cidr` |
 
@@ -51,7 +51,7 @@ All three VMs are reachable directly over SSH from the host through the bridge.
 | SSH into control plane | `ssh controlplane-1` |
 | SSH into worker 1 | `ssh nodes-1` |
 | SSH into worker 2 | `ssh nodes-2` |
-| API server from host | `curl --cacert ~/cka-lab/three-kubeadm/ca.crt https://192.168.122.10:6443/healthz` |
+| API server from host | `curl --cacert ~/cka-lab/three-kubeadm/ca.crt https://192.168.100.10:6443/healthz` |
 | `kubectl` from host | `KUBECONFIG=~/cka-lab/three-kubeadm/admin.conf kubectl get nodes` |
 | `controlplane-1` console log | `tail -f ~/cka-lab/three-kubeadm/controlplane-1/controlplane-1-console.log` |
 | `nodes-1` console log | `tail -f ~/cka-lab/three-kubeadm/nodes-1/nodes-1-console.log` |
@@ -67,19 +67,19 @@ Add this to `~/.ssh/config` on the host once:
 
 ```ssh-config
 Host controlplane-1
-    HostName 192.168.122.10
+    HostName 192.168.100.10
     User kube
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new
 
 Host nodes-1
-    HostName 192.168.122.11
+    HostName 192.168.100.11
     User kube
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new
 
 Host nodes-2
-    HostName 192.168.122.12
+    HostName 192.168.100.12
     User kube
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new

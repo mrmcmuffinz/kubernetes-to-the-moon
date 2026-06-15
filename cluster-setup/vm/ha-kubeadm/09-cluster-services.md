@@ -33,7 +33,7 @@ kubectl -n kube-system get pods -l k8s-app=kube-dns -o wide
 kubectl get daemonsets -A
 
 # Verify cluster state is healthy via VIP
-curl -sk https://192.168.122.100:6443/healthz
+curl -sk https://192.168.100.100:6443/healthz
 ```
 
 ## Test Control Plane Failover

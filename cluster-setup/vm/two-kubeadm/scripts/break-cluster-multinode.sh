@@ -99,8 +99,8 @@ CONFIGURATION
         SSH command for nodes-1. Default: ssh nodes-1
 
     Examples:
-        export NODE1_SSH="ssh -p 2222 kube@192.168.122.10"
-        export NODE2_SSH="ssh -p 2223 kube@192.168.122.11"
+        export NODE1_SSH="ssh kube@192.168.100.10"
+        export NODE2_SSH="ssh kube@192.168.100.11"
 
 EXAMPLES
     Run a random scenario:
@@ -228,7 +228,7 @@ list_scenarios() {
 # Difficulty: Beginner | Concept: kubelet kubeconfig server URL | Symptom: nodes-1 goes NotReady; kubelet cannot reach API server
 scenario_1() {
   backup_if_needed nodes-1 /etc/kubernetes/kubelet.conf
-  run_on nodes-1 "sed -i 's|server: https://192.168.122.10:6443|server: https://192.168.122.10:7777|' /etc/kubernetes/kubelet.conf && systemctl restart kubelet" 2>/dev/null || true
+  run_on nodes-1 "sed -i 's|server: https://192.168.100.10:6443|server: https://192.168.100.10:7777|' /etc/kubernetes/kubelet.conf && systemctl restart kubelet" 2>/dev/null || true
 }
 
 # Difficulty: Intermediate | Concept: cgroup driver consistency | Symptom: nodes-1 NotReady; kubelet logs show cgroup errors, containers fail to start
@@ -250,7 +250,7 @@ scenario_4() {
 # Difficulty: Advanced | Concept: API server advertise address | Symptom: static pod restarts; workers lose API connectivity; new joins fail
 scenario_5() {
   backup_if_needed controlplane-1 /etc/kubernetes/manifests/kube-apiserver.yaml
-  run_on controlplane-1 "sed -i 's|--advertise-address=192.168.122.10|--advertise-address=192.168.122.99|' /etc/kubernetes/manifests/kube-apiserver.yaml" 2>/dev/null || true
+  run_on controlplane-1 "sed -i 's|--advertise-address=192.168.100.10|--advertise-address=192.168.100.99|' /etc/kubernetes/manifests/kube-apiserver.yaml" 2>/dev/null || true
 }
 
 # Difficulty: Intermediate | Concept: CNI DaemonSet image reference | Symptom: calico-node pods crash; cross-node pod traffic fails; nodes may go NotReady

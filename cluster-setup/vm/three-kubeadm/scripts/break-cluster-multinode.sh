@@ -188,7 +188,7 @@ scenario_5() {
 # Difficulty: Beginner | Concept: kubelet kubeconfig server URL on nodes-1 | Symptom: nodes-1 goes NotReady; controlplane-1 and nodes-2 unaffected
 scenario_6() {
   backup_if_needed nodes-1 /etc/kubernetes/kubelet.conf
-  run_on nodes-1 "sed -i 's|server: https://192.168.122.10:6443|server: https://192.168.122.10:7777|' /etc/kubernetes/kubelet.conf && systemctl restart kubelet"
+  run_on nodes-1 "sed -i 's|server: https://192.168.100.10:6443|server: https://192.168.100.10:7777|' /etc/kubernetes/kubelet.conf && systemctl restart kubelet"
 }
 
 # Difficulty: Beginner | Concept: container runtime service state on nodes-2 | Symptom: nodes-2 drops to NotReady; all containers on nodes-2 stop

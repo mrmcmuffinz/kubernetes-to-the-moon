@@ -23,7 +23,7 @@ for node in nodes-1 nodes-2; do
   ssh "$node" '
     sudo crictl info 2>/dev/null | grep -q runtimeHandlers && echo "containerd: OK" || echo "containerd: FAIL"
     free -h | grep Swap
-    curl -sk https://192.168.122.10:6443/healthz && echo " (apiserver reachable)"
+    curl -sk https://192.168.100.10:6443/healthz && echo " (apiserver reachable)"
   '
 done
 ```

@@ -28,7 +28,7 @@ This prints a new certificate key. Use it in the join command below.
 ssh controlplane-2 '
   sudo crictl info 2>/dev/null | grep -q runtimeHandlers && echo "containerd: OK"
   free -h | grep Swap
-  curl -sk https://192.168.122.100:6443/healthz && echo " (VIP reachable)"
+  curl -sk https://192.168.100.100:6443/healthz && echo " (VIP reachable)"
 '
 ```
 
@@ -41,15 +41,15 @@ The control plane join command differs from the worker join command in two ways:
 From the kubeadm init output (document 05), your command looks like:
 
 ```bash
-sudo kubeadm join 192.168.122.100:6443 \
+sudo kubeadm join 192.168.100.100:6443 \
   --token <token> \
   --discovery-token-ca-cert-hash sha256:<hash> \
   --control-plane \
   --certificate-key <cert-key> \
-  --apiserver-advertise-address 192.168.122.11
+  --apiserver-advertise-address 192.168.100.21
 ```
 
-The `--apiserver-advertise-address 192.168.122.11` is critical: it tells `controlplane-2`
+The `--apiserver-advertise-address 192.168.100.21` is critical: it tells `controlplane-2`
 to advertise its own IP (not the VIP) as the address of its local API server. The VIP
 is what clients use, but each API server must advertise its own IP to etcd peers.
 
@@ -84,12 +84,12 @@ On `controlplane-2`:
 ```bash
 ssh controlplane-2
 
-sudo kubeadm join 192.168.122.100:6443 \
+sudo kubeadm join 192.168.100.100:6443 \
   --token <token> \
   --discovery-token-ca-cert-hash sha256:<hash> \
   --control-plane \
   --certificate-key <cert-key> \
-  --apiserver-advertise-address 192.168.122.11
+  --apiserver-advertise-address 192.168.100.21
 ```
 
 **Dual-NIC callout:** If you used Option C from document 02, pass a config file instead
@@ -103,19 +103,19 @@ apiVersion: kubeadm.k8s.io/v1beta4
 kind: JoinConfiguration
 discovery:
   bootstrapToken:
-    apiServerEndpoint: "192.168.122.100:6443"
+    apiServerEndpoint: "192.168.100.100:6443"
     token: <token>
     caCertHashes:
       - sha256:<hash>
 controlPlane:
   localAPIEndpoint:
-    advertiseAddress: "192.168.122.11"
+    advertiseAddress: "192.168.100.21"
     bindPort: 6443
   certificateKey: <cert-key>
 nodeRegistration:
   kubeletExtraArgs:
     - name: "node-ip"
-      value: "192.168.122.11"
+      value: "192.168.100.21"
 EOF
 
 sudo kubeadm join --config ~/kubeadm-join-cp2.yaml
@@ -125,7 +125,7 @@ This takes 1-2 minutes. kubeadm will:
 1. Download and unpack the certificates from the cluster Secret.
 2. Generate a kubelet certificate for `controlplane-2`.
 3. Start the etcd member process and join the existing etcd cluster.
-4. Start the kube-apiserver configured to advertise `192.168.122.11`.
+4. Start the kube-apiserver configured to advertise `192.168.100.21`.
 5. Start kube-controller-manager and kube-scheduler (active/standby -- only one runs
    leader election at a time).
 
@@ -163,24 +163,24 @@ ssh controlplane-1 '
 Expected output: two members, both showing `started`:
 
 ```
-<id>, started, controlplane-1, https://192.168.122.10:2380, https://192.168.122.10:2379
-<id>, started, controlplane-2, https://192.168.122.11:2380, https://192.168.122.11:2379
+<id>, started, controlplane-1, https://192.168.100.20:2380, https://192.168.100.20:2379
+<id>, started, controlplane-2, https://192.168.100.21:2380, https://192.168.100.21:2379
 ```
 
 ## Part 7: Verify controlplane-2 API Server is Reachable via VIP
 
 HAProxy should now have both backends `UP`. The stats page at
-`http://192.168.122.1:9000/stats` should show both servers active.
+`http://192.168.100.1:9000/stats` should show both servers active.
 
 Test direct connectivity:
 
 ```bash
 # Direct to controlplane-2
-curl -sk https://192.168.122.11:6443/healthz
+curl -sk https://192.168.100.21:6443/healthz
 # Expected: ok
 
 # Via VIP (may route to either control plane)
-curl -sk https://192.168.122.100:6443/healthz
+curl -sk https://192.168.100.100:6443/healthz
 # Expected: ok
 ```
 

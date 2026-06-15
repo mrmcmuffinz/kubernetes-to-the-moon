@@ -21,8 +21,8 @@ joined into a `kubeadm`-installed Kubernetes cluster:
 ```mermaid
 graph TB
     subgraph Host["Ubuntu 24.04 QEMU/KVM Host"]
-        br0["br0 bridge<br/>192.168.122.1/24"]
-        subgraph cp1["controlplane-1 (control plane)<br/>192.168.122.10"]
+        br-vm["br-vm bridge<br/>192.168.100.1/24"]
+        subgraph cp1["controlplane-1 (control plane)<br/>192.168.100.10"]
             cp_etcd["etcd"]
             cp_api["kube-apiserver"]
             cp_sch["kube-scheduler"]
@@ -31,21 +31,21 @@ graph TB
             cp_proxy["kube-proxy"]
             cp_calico["calico-node"]
         end
-        subgraph w1["nodes-1 (worker)<br/>192.168.122.11"]
+        subgraph w1["nodes-1 (worker)<br/>192.168.100.11"]
             w1_kubelet["kubelet"]
             w1_proxy["kube-proxy"]
             w1_calico["calico-node"]
         end
-        subgraph w2["nodes-2 (worker)<br/>192.168.122.12"]
+        subgraph w2["nodes-2 (worker)<br/>192.168.100.12"]
             w2_kubelet["kubelet"]
             w2_proxy["kube-proxy"]
             w2_calico["calico-node"]
         end
     end
 
-    br0 --- cp1
-    br0 --- w1
-    br0 --- w2
+    br-vm --- cp1
+    br-vm --- w1
+    br-vm --- w2
 ```
 
 ## Prerequisites
@@ -76,9 +76,9 @@ Quick reference: hostnames, IPs, version table, CIDR ranges, common commands.
 
 ### [01 - Host Bridge Setup](01-host-bridge-setup.md)
 
-Identical to `two-kubeadm/01-host-bridge-setup.md`. Skip if `br0` is already configured.
+Identical to `two-kubeadm/01-host-bridge-setup.md`. Skip if `br-vm` is already configured.
 
-**Time:** 20-30 min. **Result:** `br0` interface on the host with `192.168.122.1/24`, NAT and `qemu-bridge-helper` configured.
+**Time:** 20-30 min. **Result:** `br-vm` interface on the host with `192.168.100.1/24`, NAT and `qemu-bridge-helper` configured.
 
 ### [02 - VM Provisioning](02-vm-provisioning.md)
 
@@ -99,7 +99,7 @@ toolchain on all three nodes.
 Runs `kubeadm init` on `controlplane-1`. Sets up `kubectl` access and copies the
 kubeconfig to the host.
 
-**Time:** 10-15 min. **Result:** Kubernetes API reachable at `https://192.168.122.10:6443`. `controlplane-1` is `NotReady`.
+**Time:** 10-15 min. **Result:** Kubernetes API reachable at `https://192.168.100.10:6443`. `controlplane-1` is `NotReady`.
 
 ### [05 - CNI Installation](05-cni-installation.md)
 
@@ -137,7 +137,7 @@ Installs local-path-provisioner, Helm, metrics-server, and optionally MetalLB.
 
 | CIDR | Purpose | Where It Appears |
 |------|---------|------------------|
-| `192.168.122.0/24` | Host bridge `br0` | VM IPs (`.10`, `.11`, `.12`), host gateway (`192.168.122.1`), MetalLB pool slice (optional) |
+| `192.168.100.0/24` | Lab-VMs VLAN 100, bridge `br-vm` | VM IPs (`.10`, `.11`, `.12`), host bridge at `192.168.100.2`, UCG-Fiber gateway at `192.168.100.1`, MetalLB pool slice (optional) |
 | `10.96.0.0/16` | Service ClusterIPs | `kubeadm` `serviceSubnet`, CoreDNS `10.96.0.10`, kubelet `clusterDNS`, API server `10.96.0.1` |
 | `10.244.0.0/16` | Pod IPs | `kubeadm` `podSubnet`, Calico IPPool `cidr` |
 

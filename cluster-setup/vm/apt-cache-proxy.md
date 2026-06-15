@@ -6,11 +6,10 @@ nginx can act as a caching reverse proxy for apt repositories. Install it once o
 
 **What is and is not cached:** nginx proxies both HTTP and HTTPS backends. Ubuntu 24.04 packages (`containerd`, `socat`, `conntrack`, `curl`, and the cloud-init utility packages) are cached from the Ubuntu mirror. Kubernetes packages (`kubelet`, `kubeadm`, `kubectl`, `cri-tools`) are now also cacheable because nginx can proxy HTTPS repositories like `pkgs.k8s.io`. Ubuntu Pro/ESM repositories bypass the proxy to preserve token authentication.
 
-**Network mode note:** The guides use several different VM networking modes, which determine the host IP that VMs use to reach the proxy.
+**Network mode note:** The guides use two VM networking modes, which determine the host IP that VMs use to reach the proxy.
 
 - Single-node guides (`single-systemd`, `single-kubeadm`) use QEMU user-mode networking. The host is reachable from inside the VM at `10.0.2.2`.
-- Multi-node guides with **Option A** (software NAT bridge) assign `br0` the IP `192.168.122.1` and NAT VM traffic through the host uplink. The host bridge IP is `192.168.122.1`.
-- Multi-node guides with **Option B** (physical NIC bridge) slave a spare NIC to `br0` and assign it a static IP in your physical LAN range. The host bridge IP is whatever you set in the Netplan config, for example `192.168.2.200`. Substitute that address wherever `192.168.122.1` appears in this document.
+- Multi-node guides (`two-kubeadm`, `three-kubeadm`, `ha-kubeadm`) attach VMs to a VLAN-isolated host bridge (`br-vm`). The host bridge IP is `192.168.100.2`. Use that address wherever `PROXY_IP` appears in this document.
 
 ## Network Flow Architecture
 
@@ -88,25 +87,16 @@ flowchart TB
         VM1 -->|"apt sources point to<br/>http://10.0.2.2:3142/..."| Host1
     end
 
-    subgraph OptA["Option A: NAT Bridge (two-kubeadm default)"]
-        VMa1[controlplane-1<br/>192.168.122.10]
-        VMa2[nodes-1<br/>192.168.122.11]
-        Br0a[br0: 192.168.122.1<br/>nginx: 192.168.122.1:3142]
-        VMa1 -->|"apt sources point to<br/>http://192.168.122.1:3142/..."| Br0a
-        VMa2 -->|"apt sources point to<br/>http://192.168.122.1:3142/..."| Br0a
-    end
-
-    subgraph OptB["Option B: Physical Bridge"]
-        VMb1[controlplane-1<br/>192.168.2.210]
-        VMb2[nodes-1<br/>192.168.2.211]
-        Br0b[br0: 192.168.2.200<br/>nginx: 192.168.2.200:3142]
-        VMb1 -->|"apt sources point to<br/>http://192.168.2.200:3142/..."| Br0b
-        VMb2 -->|"apt sources point to<br/>http://192.168.2.200:3142/..."| Br0b
+    subgraph VLAN["Multi-Node: VLAN Bridge (two-kubeadm, three-kubeadm, ha-kubeadm)"]
+        VMa1[controlplane-1<br/>192.168.100.10]
+        VMa2[nodes-1<br/>192.168.100.11]
+        BrVM[br-vm: 192.168.100.2<br/>nginx: 192.168.100.2:3142]
+        VMa1 -->|"apt sources point to<br/>http://192.168.100.2:3142/..."| BrVM
+        VMa2 -->|"apt sources point to<br/>http://192.168.100.2:3142/..."| BrVM
     end
 
     Host1 -.->|nginx listens on<br/>all interfaces| nginx_daemon
-    Br0a -.->|nginx listens on<br/>all interfaces| nginx_daemon
-    Br0b -.->|nginx listens on<br/>all interfaces| nginx_daemon
+    BrVM -.->|nginx listens on<br/>all interfaces| nginx_daemon
 
     nginx_daemon[nginx daemon<br/>port 3142] -->|HTTP| mirror[mirror.arizona.edu]
     nginx_daemon -->|HTTPS + SNI| k8s[pkgs.k8s.io]
@@ -262,7 +252,7 @@ sudo chown www-data:www-data /var/cache/nginx/apt
 
 VMs need their apt sources files rewritten to use the nginx proxy. The format is `http://PROXY_IP:3142/domain.com/path` instead of the original `https://domain.com/path`. There are two approaches: manual configuration after the VM boots, or baked into cloud-init for new VMs.
 
-### Option A: Manual Configuration (Post-Boot)
+### Manual Configuration (Post-Boot)
 
 SSH into the VM and rewrite the sources files. Use the correct host IP for the networking mode the VM was built with.
 
@@ -294,19 +284,19 @@ Signed-By: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 EOF
 ```
 
-**For multi-node guides with Option A (software NAT bridge, host at `192.168.122.1`):**
+**For multi-node guides (VLAN bridge, host bridge `br-vm` at `192.168.100.2`):**
 
 ```bash
 # Ubuntu base packages
 sudo tee /etc/apt/sources.list.d/ubuntu.sources > /dev/null << 'EOF'
 Types: deb
-URIs: http://192.168.122.1:3142/mirror.arizona.edu/ubuntu/
+URIs: http://192.168.100.2:3142/mirror.arizona.edu/ubuntu/
 Suites: noble noble-updates noble-backports
 Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 
 Types: deb
-URIs: http://192.168.122.1:3142/mirror.arizona.edu/ubuntu/
+URIs: http://192.168.100.2:3142/mirror.arizona.edu/ubuntu/
 Suites: noble-security
 Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
@@ -315,37 +305,7 @@ EOF
 # Kubernetes packages (if the repo has already been added)
 sudo tee /etc/apt/sources.list.d/kubernetes.sources > /dev/null << 'EOF'
 Types: deb
-URIs: http://192.168.122.1:3142/pkgs.k8s.io/core:/stable:/v1.35/deb/
-Suites: /
-Components:
-Signed-By: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-EOF
-```
-
-**For multi-node guides with Option B (physical NIC bridge):**
-
-Replace `192.168.2.200` with the address assigned to `br0` in your `10-br0.yaml` Netplan config.
-
-```bash
-# Ubuntu base packages
-sudo tee /etc/apt/sources.list.d/ubuntu.sources > /dev/null << 'EOF'
-Types: deb
-URIs: http://192.168.2.200:3142/mirror.arizona.edu/ubuntu/
-Suites: noble noble-updates noble-backports
-Components: main restricted universe multiverse
-Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-
-Types: deb
-URIs: http://192.168.2.200:3142/mirror.arizona.edu/ubuntu/
-Suites: noble-security
-Components: main restricted universe multiverse
-Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-EOF
-
-# Kubernetes packages (if the repo has already been added)
-sudo tee /etc/apt/sources.list.d/kubernetes.sources > /dev/null << 'EOF'
-Types: deb
-URIs: http://192.168.2.200:3142/pkgs.k8s.io/core:/stable:/v1.35/deb/
+URIs: http://192.168.100.2:3142/pkgs.k8s.io/core:/stable:/v1.35/deb/
 Suites: /
 Components:
 Signed-By: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
@@ -362,7 +322,7 @@ sudo apt-get update
 
 On the first run, the cache is empty and packages are fetched from upstream (slow). On the second run, the cache is warm and updates complete in 1-2 seconds.
 
-### Option B: cloud-init (New VMs)
+### cloud-init (New VMs)
 
 If you are creating a fresh VM and want the proxy active from the first `apt-get` call, add `write_files` entries to the cloud-init `user-data` for the node. Cloud-init applies `write_files` before it installs packages listed in the `packages:` block, so the cloud-init-time installs also use the cache.
 
@@ -395,19 +355,19 @@ The `two-kubeadm/scripts/create-cluster.sh` script already includes these source
     permissions: '0644'
 ```
 
-**For multi-node guides with Option A (NAT bridge):**
+**For multi-node guides (VLAN bridge, host bridge at `192.168.100.2`):**
 
 ```yaml
   - path: /etc/apt/sources.list.d/ubuntu-proxy.sources
     content: |
       Types: deb
-      URIs: http://192.168.122.1:3142/mirror.arizona.edu/ubuntu/
+      URIs: http://192.168.100.2:3142/mirror.arizona.edu/ubuntu/
       Suites: noble noble-updates noble-backports
       Components: main restricted universe multiverse
       Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
       
       Types: deb
-      URIs: http://192.168.122.1:3142/mirror.arizona.edu/ubuntu/
+      URIs: http://192.168.100.2:3142/mirror.arizona.edu/ubuntu/
       Suites: noble-security
       Components: main restricted universe multiverse
       Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
@@ -415,36 +375,7 @@ The `two-kubeadm/scripts/create-cluster.sh` script already includes these source
   - path: /etc/apt/sources.list.d/kubernetes.sources
     content: |
       Types: deb
-      URIs: http://192.168.122.1:3142/pkgs.k8s.io/core:/stable:/v1.35/deb/
-      Suites: /
-      Components:
-      Signed-By: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-    permissions: '0644'
-```
-
-**For multi-node guides with Option B (physical NIC bridge):**
-
-Use the static IP assigned to `br0` in your `10-br0.yaml` (for example `192.168.2.200`):
-
-```yaml
-  - path: /etc/apt/sources.list.d/ubuntu-proxy.sources
-    content: |
-      Types: deb
-      URIs: http://192.168.2.200:3142/mirror.arizona.edu/ubuntu/
-      Suites: noble noble-updates noble-backports
-      Components: main restricted universe multiverse
-      Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-      
-      Types: deb
-      URIs: http://192.168.2.200:3142/mirror.arizona.edu/ubuntu/
-      Suites: noble-security
-      Components: main restricted universe multiverse
-      Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-    permissions: '0644'
-  - path: /etc/apt/sources.list.d/kubernetes.sources
-    content: |
-      Types: deb
-      URIs: http://192.168.2.200:3142/pkgs.k8s.io/core:/stable:/v1.35/deb/
+      URIs: http://192.168.100.2:3142/pkgs.k8s.io/core:/stable:/v1.35/deb/
       Suites: /
       Components:
       Signed-By: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
@@ -463,20 +394,20 @@ apt:
     ubuntu-proxy.sources:
       sources_list: |
         Types: deb
-        URIs: http://192.168.122.1:3142/mirror.arizona.edu/ubuntu/
+        URIs: http://192.168.100.2:3142/mirror.arizona.edu/ubuntu/
         Suites: noble noble-updates noble-backports
         Components: main restricted universe multiverse
         Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 
         Types: deb
-        URIs: http://192.168.122.1:3142/mirror.arizona.edu/ubuntu/
+        URIs: http://192.168.100.2:3142/mirror.arizona.edu/ubuntu/
         Suites: noble-security
         Components: main restricted universe multiverse
         Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
     kubernetes.sources:
       sources_list: |
         Types: deb
-        URIs: http://192.168.122.1:3142/pkgs.k8s.io/core:/stable:/v1.35/deb/
+        URIs: http://192.168.100.2:3142/pkgs.k8s.io/core:/stable:/v1.35/deb/
         Suites: /
         Components:
         Signed-By: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
@@ -630,9 +561,8 @@ On the VM, restore the original sources files or delete the proxy-rewritten file
 | Config file | `/etc/nginx/sites-available/apt-cache` |
 | VM sources files | `ubuntu.sources`, `kubernetes.sources` (rewritten to use proxy URL format) |
 | Proxy URL format | `http://HOST_IP:3142/domain.com/path` |
-| Proxy address (user-mode networking) | `http://10.0.2.2:3142` |
-| Proxy address (multi-node Option A, NAT bridge) | `http://192.168.122.1:3142` |
-| Proxy address (multi-node Option B, physical NIC) | `http://<br0-ip>:3142` (your Netplan address) |
+| Proxy address (user-mode networking, single-node guides) | `http://10.0.2.2:3142` |
+| Proxy address (VLAN bridge, multi-node guides) | `http://192.168.100.2:3142` |
 | Packages cached | Ubuntu HTTP repos, Kubernetes HTTPS repos |
 | Packages bypassed (not cached) | Ubuntu Pro/ESM (token auth) |
 | Access log | `/var/log/nginx/apt-cache-access.log` |

@@ -10,7 +10,7 @@ Follow these in order. Each document builds on the previous one.
 
 | # | Document | What It Does | Time |
 |---|----------|-------------|------|
-| 01 | [Host Bridge Setup](01-host-bridge-setup.md) | Configures the Linux bridge `br0` on the host, IP forwarding, NAT for outbound traffic, and `qemu-bridge-helper` so VMs can attach to the bridge | 20-30 min |
+| 01 | [Host Network Setup](01-host-bridge-setup.md) | Confirms the VLAN-isolated bridge `br-vm` is configured on the host per `00-vlan-host-network-setup.md` | 20-30 min (first time only) |
 | 02 | [VM Provisioning](02-vm-provisioning.md) | Creates two headless Ubuntu 24.04 VMs (`controlplane-1`, `nodes-1`) with cloud-init, static IPs, SSH access, and per-node start/stop scripts | 15-20 min |
 | 03 | [Node Prerequisites](03-node-prerequisites.md) | Installs containerd, runc, CNI binaries, crictl, and the `kubeadm`/`kubelet`/`kubectl` toolchain on both nodes | 10-15 min |
 | 04 | [Control Plane Init](04-control-plane-init.md) | Runs `kubeadm init` on `controlplane-1` with a YAML config, sets up `kubectl`, copies the kubeconfig to the host | 10-15 min |
@@ -36,15 +36,13 @@ Kubernetes v1.35 is the version the CKA exam currently targets.
 
 Three IP ranges are used throughout the documents and must stay consistent:
 
-| CIDR | Purpose | Where It Appears |
-|------|---------|------------------|
-| `192.168.122.0/24` | Host bridge `br0` | VM IPs (`192.168.122.10`, `192.168.122.11`), host gateway (`192.168.122.1`), MetalLB pool (optional) |
+| CIDR / Address | Purpose | Where It Appears |
+|----------------|---------|------------------|
+| `192.168.100.0/24` | Lab-VMs VLAN 100, bridge `br-vm` | VM IPs (`.10`, `.11`), host at `.2`, UCG-Fiber gateway at `.1` |
 | `10.96.0.0/16` | Service ClusterIP range | `kubeadm` `serviceSubnet`, CoreDNS ClusterIP (`10.96.0.10`), kubelet `clusterDNS`, `kubernetes` Service (`10.96.0.1`) |
 | `10.244.0.0/16` | Pod IP range | `kubeadm` `podSubnet`, Calico IPPool `cidr` |
 
-**Option B Users:** If you follow Option B (physical NIC bridge) in document 01, the `192.168.122.0/24` range above is replaced by your physical LAN subnet. See the [IP mapping table in document 02](02-vm-provisioning.md#option-b-users-ip-substitution) for the complete substitution reference.
-
-The bridge subnet matches libvirt's default `virbr0`. The host bridge setup in document 01 detects this collision and offers a way to reuse `virbr0` instead.
+The VLAN 100 bridge is configured in [`../00-vlan-host-network-setup.md`](../00-vlan-host-network-setup.md) using a UCG-Fiber + US-24 VLAN setup. The UCG-Fiber acts as the gateway at `192.168.100.1`. The host bridge `br-vm` holds `192.168.100.2` for host-to-VM access and kubectl from the host.
 
 ## VM Access
 
@@ -54,7 +52,7 @@ Both VMs are reachable directly over SSH from the host. After the SSH config set
 |--------------|---------|
 | SSH into control plane | `ssh controlplane-1` |
 | SSH into worker | `ssh nodes-1` |
-| API server from host | `curl --cacert ~/cka-lab/two-kubeadm/ca.crt https://192.168.122.10:6443/healthz` |
+| API server from host | `curl --cacert ~/cka-lab/two-kubeadm/ca.crt https://192.168.100.10:6443/healthz` |
 | `kubectl` from host | `KUBECONFIG=~/cka-lab/two-kubeadm/admin.conf kubectl get nodes` |
 | `controlplane-1` console log | `tail -f ~/cka-lab/two-kubeadm/controlplane-1/controlplane-1-console.log` |
 | `nodes-1` console log | `tail -f ~/cka-lab/two-kubeadm/nodes-1/nodes-1-console.log` |
@@ -69,13 +67,13 @@ Add this to `~/.ssh/config` on the host once. After this, `ssh controlplane-1` a
 
 ```ssh-config
 Host controlplane-1
-    HostName 192.168.122.10
+    HostName 192.168.100.10
     User kube
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new
 
 Host nodes-1
-    HostName 192.168.122.11
+    HostName 192.168.100.11
     User kube
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new

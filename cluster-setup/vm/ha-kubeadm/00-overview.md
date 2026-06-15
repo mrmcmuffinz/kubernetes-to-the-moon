@@ -9,7 +9,7 @@ on QEMU/KVM virtual machines using `kubeadm`. Built for CKA exam preparation.
 
 | # | Document | What It Does | Time |
 |---|----------|-------------|------|
-| 01 | [Host Bridge Setup](01-host-bridge-setup.md) | Configures `br0`, NAT, `qemu-bridge-helper`, and installs HAProxy on the host | 25-35 min |
+| 01 | [Host Network Setup](01-host-bridge-setup.md) | Confirms `br-vm` VLAN bridge and installs HAProxy on the host | 25-35 min |
 | 02 | [VM Provisioning](02-vm-provisioning.md) | Creates five VMs with cloud-init and static bridge IPs | 25-30 min |
 | 03 | [Node Prerequisites](03-node-prerequisites.md) | Installs containerd, runc, CNI binaries, crictl, and kubeadm on all five nodes | 15-20 min |
 | 04 | [Load Balancer Setup](04-load-balancer-setup.md) | Configures HAProxy to load balance the two API servers; verifies the VIP | 10-15 min |
@@ -36,21 +36,23 @@ Kubernetes v1.35 is the version the CKA exam currently targets.
 
 ## Node Assignments
 
-| Hostname | Bridge IP | Role |
-|----------|-----------|------|
-| `controlplane-1` | `192.168.122.10` | First control plane (stacked etcd) |
-| `controlplane-2` | `192.168.122.11` | Second control plane (stacked etcd) |
-| `nodes-1` | `192.168.122.12` | Worker |
-| `nodes-2` | `192.168.122.13` | Worker |
-| `nodes-3` | `192.168.122.14` | Worker |
-| HAProxy VIP | `192.168.122.100` | Control plane load balancer (host-side only) |
+| Hostname | VLAN 100 IP | Role |
+|----------|-------------|------|
+| `controlplane-1` | `192.168.100.20` | First control plane (stacked etcd) |
+| `controlplane-2` | `192.168.100.21` | Second control plane (stacked etcd) |
+| `nodes-1` | `192.168.100.22` | Worker |
+| `nodes-2` | `192.168.100.23` | Worker |
+| `nodes-3` | `192.168.100.24` | Worker |
+| HAProxy VIP | `192.168.100.100` | Control plane load balancer (host-side only) |
+| Host bridge `br-vm` | `192.168.100.2` | Host management access |
+| UCG-Fiber (gateway) | `192.168.100.1` | Default gateway for all VMs |
 
 ## Network Configuration
 
 | CIDR / Address | Purpose | Where It Appears |
 |----------------|---------|------------------|
-| `192.168.122.0/24` | Host bridge `br0` | All VM IPs and host gateway (`192.168.122.1`) |
-| `192.168.122.100` | HAProxy VIP | `controlPlaneEndpoint` in kubeadm config, all kubeconfigs |
+| `192.168.100.0/24` | Lab-VMs VLAN 100, bridge `br-vm` | All VM IPs, host at `.2`, UCG-Fiber gateway at `.1` |
+| `192.168.100.100` | HAProxy VIP | `controlPlaneEndpoint` in kubeadm config, all kubeconfigs |
 | `10.96.0.0/16` | Service ClusterIP range | `kubeadm` `serviceSubnet`, CoreDNS ClusterIP (`10.96.0.10`), kubelet `clusterDNS` |
 | `10.244.0.0/16` | Pod IP range | `kubeadm` `podSubnet`, Calico IPPool `cidr` |
 
@@ -63,7 +65,7 @@ Kubernetes v1.35 is the version the CKA exam currently targets.
 | SSH worker 1 | `ssh nodes-1` |
 | SSH worker 2 | `ssh nodes-2` |
 | SSH worker 3 | `ssh nodes-3` |
-| API via VIP | `curl -k https://192.168.122.100:6443/healthz` |
+| API via VIP | `curl -k https://192.168.100.100:6443/healthz` |
 | `kubectl` from host | `KUBECONFIG=~/cka-lab/ha-kubeadm/admin.conf kubectl get nodes` |
 | Stop all VMs | `~/cka-lab/ha-kubeadm/stop-cluster.sh` |
 | Start all VMs | `~/cka-lab/ha-kubeadm/start-cluster.sh` |
@@ -76,31 +78,31 @@ Add to `~/.ssh/config`:
 
 ```ssh-config
 Host controlplane-1
-    HostName 192.168.122.10
+    HostName 192.168.100.20
     User kube
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new
 
 Host controlplane-2
-    HostName 192.168.122.11
+    HostName 192.168.100.21
     User kube
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new
 
 Host nodes-1
-    HostName 192.168.122.12
+    HostName 192.168.100.22
     User kube
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new
 
 Host nodes-2
-    HostName 192.168.122.13
+    HostName 192.168.100.23
     User kube
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new
 
 Host nodes-3
-    HostName 192.168.122.14
+    HostName 192.168.100.24
     User kube
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new
@@ -109,7 +111,7 @@ Host nodes-3
 ## HAProxy Design
 
 HAProxy runs on the host (not inside any VM). It listens on the VIP address
-(`192.168.122.100:6443`) and forwards connections to both API servers using a
+(`192.168.100.100:6443`) and forwards connections to both API servers using a
 `tcp` mode frontend/backend pair. Health checks use the `/healthz` path. If
 `controlplane-1`'s API server fails, HAProxy automatically routes new connections to
 `controlplane-2`.
@@ -117,9 +119,9 @@ HAProxy runs on the host (not inside any VM). It listens on the VIP address
 ```
                   ┌────────────────────────────────────┐
 Client            │  HAProxy (host)                    │
-──────> :6443 ──> │  192.168.122.100:6443              │
-                  │    backend: 192.168.122.10:6443 (CP1)│
-                  │    backend: 192.168.122.11:6443 (CP2)│
+──────> :6443 ──> │  192.168.100.100:6443              │
+                  │    backend: 192.168.100.20:6443 (CP1)│
+                  │    backend: 192.168.100.21:6443 (CP2)│
                   └────────────────────────────────────┘
 ```
 

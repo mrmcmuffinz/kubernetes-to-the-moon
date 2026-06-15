@@ -23,10 +23,10 @@ fronting both control plane nodes:
 ```mermaid
 graph TB
     subgraph Host["Ubuntu 24.04 QEMU/KVM Host"]
-        haproxy["HAProxy<br/>192.168.122.100:6443<br/>(host bridge VIP)"]
-        br0["br0 bridge<br/>192.168.122.1/24"]
+        haproxy["HAProxy<br/>192.168.100.100:6443<br/>(host bridge VIP)"]
+        br-vm["br-vm bridge<br/>192.168.100.1/24"]
 
-        subgraph cp1["controlplane-1<br/>192.168.122.10"]
+        subgraph cp1["controlplane-1<br/>192.168.100.20"]
             cp1_etcd["etcd"]
             cp1_api["kube-apiserver"]
             cp1_cm["kube-controller-manager"]
@@ -34,7 +34,7 @@ graph TB
             cp1_kl["kubelet"]
         end
 
-        subgraph cp2["controlplane-2<br/>192.168.122.11"]
+        subgraph cp2["controlplane-2<br/>192.168.100.21"]
             cp2_etcd["etcd"]
             cp2_api["kube-apiserver"]
             cp2_cm2["kube-controller-manager"]
@@ -42,24 +42,24 @@ graph TB
             cp2_kl["kubelet"]
         end
 
-        subgraph w1["nodes-1<br/>192.168.122.12"]
+        subgraph w1["nodes-1<br/>192.168.100.22"]
             w1_kl["kubelet + calico"]
         end
-        subgraph w2["nodes-2<br/>192.168.122.13"]
+        subgraph w2["nodes-2<br/>192.168.100.23"]
             w2_kl["kubelet + calico"]
         end
-        subgraph w3["nodes-3<br/>192.168.122.14"]
+        subgraph w3["nodes-3<br/>192.168.100.24"]
             w3_kl["kubelet + calico"]
         end
     end
 
     haproxy -->|backend| cp1_api
     haproxy -->|backend| cp2_api
-    br0 --- cp1
-    br0 --- cp2
-    br0 --- w1
-    br0 --- w2
-    br0 --- w3
+    br-vm --- cp1
+    br-vm --- cp2
+    br-vm --- w1
+    br-vm --- w2
+    br-vm --- w3
 ```
 
 The stacked etcd topology means each control plane node runs its own etcd instance.
@@ -93,10 +93,10 @@ Quick reference: hostnames, IPs, VIP, version table, CIDR ranges, HAProxy design
 
 ### [01 - Host Bridge Setup](01-host-bridge-setup.md)
 
-Configures `br0`, IP forwarding, NAT, `qemu-bridge-helper`, and installs HAProxy on
+Configures `br-vm`, IP forwarding, NAT, `qemu-bridge-helper`, and installs HAProxy on
 the host to load balance the two API servers.
 
-**Time:** 25-35 min. **Result:** `br0` at `192.168.122.1/24`, HAProxy listening on `192.168.122.100:6443`.
+**Time:** 25-35 min. **Result:** `br-vm` at `192.168.100.1/24`, HAProxy listening on `192.168.100.100:6443`.
 
 ### [02 - VM Provisioning](02-vm-provisioning.md)
 
@@ -116,7 +116,7 @@ nodes.
 Configures HAProxy on the host with health checks against both control plane API
 servers. Verifies the VIP routes to the active control plane.
 
-**Time:** 10-15 min. **Result:** `curl -k https://192.168.122.100:6443/healthz` returns `ok`.
+**Time:** 10-15 min. **Result:** `curl -k https://192.168.100.100:6443/healthz` returns `ok`.
 
 ### [05 - First Control Plane Init](05-control-plane-init.md)
 
@@ -170,8 +170,8 @@ Installs local-path-provisioner, Helm, metrics-server, and optionally MetalLB.
 
 | CIDR / Address | Purpose | Where It Appears |
 |----------------|---------|------------------|
-| `192.168.122.0/24` | Host bridge `br0` | All VM IPs, host gateway (`192.168.122.1`) |
-| `192.168.122.100` | HAProxy VIP | `controlPlaneEndpoint` in kubeadm config, kubeconfigs, worker join command |
+| `192.168.100.0/24` | Lab-VMs VLAN 100, bridge `br-vm` | All VM IPs, host bridge at `192.168.100.2`, UCG-Fiber gateway at `192.168.100.1` |
+| `192.168.100.100` | HAProxy VIP | `controlPlaneEndpoint` in kubeadm config, kubeconfigs, worker join command |
 | `10.96.0.0/16` | Service ClusterIPs | `kubeadm` `serviceSubnet`, CoreDNS, kubelet `clusterDNS` |
 | `10.244.0.0/16` | Pod IPs | `kubeadm` `podSubnet`, Calico IPPool |
 

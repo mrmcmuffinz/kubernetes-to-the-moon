@@ -31,19 +31,8 @@ systemctl is-active containerd
 kubeadm version -o short    # v1.35.3
 ```
 
-## Option B Users: IP Address Substitution
 
-If you followed **Option B (physical NIC bridge)** in document 01, all IP addresses in this document assume Option A networking and must be replaced with your physical LAN addresses.
-
-Refer to the [IP mapping table in document 02](02-vm-provisioning.md#option-b-users-ip-substitution) for the complete substitution reference.
-
-For the kubeadm-init.yaml in Part 1, replace:
-- `advertiseAddress: 192.168.122.10` → your controlplane-1 IP (e.g., `192.168.2.210`)
-- `node-ip: 192.168.122.10` → your controlplane-1 IP
-- `controlPlaneEndpoint: 192.168.122.10:6443` → your controlplane-1 IP with port
-- `certSANs: - 192.168.122.10` → your controlplane-1 IP
-
-All verification commands in Parts 3-6 that reference `192.168.122.10` must use your actual controlplane-1 IP.
+All verification commands in Parts 3-6 that reference `192.168.100.10` must use your actual controlplane-1 IP.
 
 ---
 
@@ -56,20 +45,20 @@ cat > ~/kubeadm-init.yaml <<'EOF'
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration
 localAPIEndpoint:
-  advertiseAddress: 192.168.122.10
+  advertiseAddress: 192.168.100.10
   bindPort: 6443
 nodeRegistration:
   name: controlplane-1
   criSocket: unix:///run/containerd/containerd.sock
   kubeletExtraArgs:
     - name: node-ip
-      value: 192.168.122.10
+      value: 192.168.100.10
 ---
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration
 kubernetesVersion: v1.35.3
 clusterName: cka-twonode
-controlPlaneEndpoint: 192.168.122.10:6443
+controlPlaneEndpoint: 192.168.100.10:6443
 networking:
   serviceSubnet: 10.96.0.0/16
   podSubnet: 10.244.0.0/16
@@ -79,7 +68,7 @@ apiServer:
     - name: authorization-mode
       value: Node,RBAC
   certSANs:
-    - 192.168.122.10
+    - 192.168.100.10
     - controlplane-1
     - controlplane-1.cka.local
 controllerManager:
@@ -99,7 +88,7 @@ EOF
 
 A few details worth noting:
 
-- `advertiseAddress` and `node-ip` both point at `192.168.122.10`. With a single network interface the default would work, but setting them explicitly removes ambiguity and matches what you would do in any environment with multiple interfaces.
+- `advertiseAddress` and `node-ip` both point at `192.168.100.10`. With a single network interface the default would work, but setting them explicitly removes ambiguity and matches what you would do in any environment with multiple interfaces.
 - `podSubnet: 10.244.0.0/16` matches the Calico install in document 05. If you change one, change the other.
 - `controlPlaneEndpoint` is set even on a single control plane node so that worker join tokens reference a stable name. It also means the cluster could grow to HA later without re-issuing certificates.
 - `cgroupDriver: systemd` matches the containerd config from document 03. A mismatch here is one of the most common `kubeadm init` failure modes.
@@ -127,7 +116,7 @@ The second shows the join command for `nodes-1`:
 ```
 You can now join any number of worker nodes by running the following on each as root:
 
-kubeadm join 192.168.122.10:6443 --token abcdef.0123456789abcdef \
+kubeadm join 192.168.100.10:6443 --token abcdef.0123456789abcdef \
         --discovery-token-ca-cert-hash sha256:1234...
 ```
 
@@ -163,7 +152,7 @@ export KUBECONFIG=~/cka-lab/two-kubeadm/admin.conf
 kubectl get nodes
 ```
 
-The `admin.conf` already references `192.168.122.10:6443` because of `controlPlaneEndpoint`, so no edits are needed.
+The `admin.conf` already references `192.168.100.10:6443` because of `controlPlaneEndpoint`, so no edits are needed.
 
 ## Part 5: Verify Control Plane Components
 
@@ -179,7 +168,7 @@ sudo ls -la /etc/kubernetes/manifests/
 kubectl -n kube-system get pods -o wide
 
 # Component health endpoints
-curl -k https://192.168.122.10:6443/healthz
+curl -k https://192.168.100.10:6443/healthz
 curl -k https://127.0.0.1:10257/healthz   # controller-manager
 curl -k https://127.0.0.1:10259/healthz   # scheduler
 
@@ -244,7 +233,7 @@ The control plane is up and reachable:
 | Component | Manifest | Health Endpoint |
 |-----------|----------|-----------------|
 | etcd | `/etc/kubernetes/manifests/etcd.yaml` | etcdctl endpoint health |
-| kube-apiserver | `/etc/kubernetes/manifests/kube-apiserver.yaml` | `https://192.168.122.10:6443/healthz` |
+| kube-apiserver | `/etc/kubernetes/manifests/kube-apiserver.yaml` | `https://192.168.100.10:6443/healthz` |
 | kube-controller-manager | `/etc/kubernetes/manifests/kube-controller-manager.yaml` | `https://127.0.0.1:10257/healthz` |
 | kube-scheduler | `/etc/kubernetes/manifests/kube-scheduler.yaml` | `https://127.0.0.1:10259/healthz` |
 

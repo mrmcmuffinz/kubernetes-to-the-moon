@@ -3,17 +3,17 @@
 # create-cluster.sh
 #
 # Provisions two headless Ubuntu 24.04 VMs (controlplane-1, nodes-1) for the two-kubeadm
-# Kubernetes cluster lab. Both VMs attach to the host bridge br0 from
-# 01-host-bridge-setup.md.
+# Kubernetes cluster lab. Both VMs attach to the host bridge br-vm from
+# 01-host-bridge-setup.md (which references ../00-vlan-host-network-setup.md).
 #
 # Usage:
 #   ./create-cluster.sh                                              # both VMs, default IPs
 #   ./create-cluster.sh controlplane-1                               # one VM only
 #   ./create-cluster.sh nodes-1                                      # one VM only
-#   ./create-cluster.sh --gateway 192.168.2.1 \
-#                       --cp-ip 192.168.2.210 \
-#                       --worker-ip 192.168.2.211 \
-#                       --apt-proxy-host 192.168.2.200               # Option B IPs
+#   ./create-cluster.sh --gateway 192.168.100.1 \
+#                       --cp-ip 192.168.100.10 \
+#                       --worker-ip 192.168.100.11 \
+#                       --apt-proxy-host 192.168.100.2               # override defaults
 
 set -euo pipefail
 
@@ -35,14 +35,14 @@ DISK_SIZE="40G"
 VM_USER="kube"
 VM_PASSWORD="kubeadmin"
 
-BRIDGE="br0"
-GATEWAY="192.168.122.1"
-APT_PROXY_HOST="${GATEWAY}"  # Defaults to gateway (correct for Option A)
+BRIDGE="br-vm"
+GATEWAY="192.168.100.1"
+APT_PROXY_HOST="192.168.100.2"  # Host bridge IP (apt-cache proxy runs on the QEMU host)
 
 # Per-node configuration
 declare -A NODES=(
-  [controlplane-1]="192.168.122.10"
-  [nodes-1]="192.168.122.11"
+  [controlplane-1]="192.168.100.10"
+  [nodes-1]="192.168.100.11"
 )
 
 # -------------------------------------------------------------------
