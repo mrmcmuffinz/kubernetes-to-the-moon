@@ -207,6 +207,8 @@ Both should show as UP. If `netplan apply` produces errors, run `sudo netplan tr
 
 QEMU includes a setuid helper binary that creates and attaches TAP interfaces for unprivileged users. It checks an allow-list before attaching to a bridge.
 
+**Fresh setup (no prior bridge configuration):**
+
 ```bash
 sudo mkdir -p /etc/qemu
 sudo tee /etc/qemu/bridge.conf > /dev/null <<'EOF'
@@ -217,10 +219,24 @@ sudo chmod 0640 /etc/qemu/bridge.conf
 
 # Set the setuid bit (Ubuntu QEMU packages often omit this)
 sudo chmod u+s /usr/lib/qemu/qemu-bridge-helper
+```
 
-# Verify
+**Migrating from an existing bridge (e.g. `br0`):**
+
+The allow-list entry and setuid bit are already in place. Just update the bridge name:
+
+```bash
+sudo sed -i 's/allow br0/allow br-vm/' /etc/qemu/bridge.conf
+```
+
+**Verify:**
+
+```bash
 ls -la /usr/lib/qemu/qemu-bridge-helper
 # Expected: -rwsr-xr-x ... root root
+
+sudo cat /etc/qemu/bridge.conf
+# Expected: allow br-vm
 ```
 
 The `s` in `-rwsr-xr-x` is the setuid bit. Without it the helper cannot create TAP interfaces.
@@ -228,6 +244,8 @@ The `s` in `-rwsr-xr-x` is the setuid bit. Without it the helper cannot create T
 ### Step 5: Exclude QEMU TAP Interfaces from NetworkManager
 
 QEMU creates TAP interfaces (`tap0`, `tap1`, etc.) dynamically when VMs start and attaches them to `br-vm`. NetworkManager will try to configure them unless told not to.
+
+**Fresh setup:**
 
 ```bash
 if systemctl is-active --quiet NetworkManager; then
@@ -237,6 +255,14 @@ unmanaged-devices=interface-name:tap*
 EOF
   sudo systemctl reload NetworkManager
 fi
+```
+
+**Migrating from an existing bridge:**
+
+The `10-unmanaged-tap.conf` file is already in place. Reload NetworkManager to pick up any other config changes:
+
+```bash
+sudo systemctl reload NetworkManager
 ```
 
 The `if` block is a no-op on systems without NetworkManager.
