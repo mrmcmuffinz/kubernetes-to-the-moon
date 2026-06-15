@@ -54,10 +54,15 @@ These steps run in **UniFi Network** under the US-24 switch device.
 1. Devices → Select the US-24 → **Port Manager** (or Profiles tab in older UI)
 2. Create profile **"Lab-VM-Trunk"**:
    - Native VLAN: `Default` (your home LAN, carries untagged home LAN traffic)
-   - Tagged VLANs: `100` (Lab-VMs)
+   - **Tagged VLAN Management:** set to `Custom` (the default is `Block All`, which hides the tagged VLAN selector and silently drops all tagged traffic)
+   - Tagged VLANs: `Lab-VMs` (VLAN 100)
    - Purpose: The QEMU host port carries both home LAN traffic (untagged) and VLAN 100 traffic (tagged)
+
+   **Common mistake:** Selecting the port profile automatically populates the Native VLAN field. If it auto-fills to `Lab-VMs` (VLAN 100) instead of `Default`, change it back to `Default`. With Native VLAN = Lab-VMs, the switch strips the VLAN 100 tag on frames sent to the host, and the Linux VLAN subinterface (`enp6s0f3.100`) silently discards them because it only accepts tagged frames. The symptom is ARP for the gateway completes on the physical NIC but stays `INCOMPLETE` in the kernel ARP table.
+
 3. Create profile **"Lab-Pi-Access"**:
    - Native VLAN: `200` (Lab-Pi)
+   - Tagged VLAN Management: `Block All` (correct for access ports; Pi nodes expect untagged frames)
    - Tagged VLANs: (none)
    - Purpose: Pi nodes connect as plain access-port clients; they receive only VLAN 200 frames with no 802.1Q tag
 
