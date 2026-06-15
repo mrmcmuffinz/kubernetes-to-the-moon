@@ -84,19 +84,28 @@ These steps run on the host machine (Ubuntu 24.04) that runs the QEMU/KVM VMs. T
 
 This document runs on the host, not inside any VM.
 
-### Step 1: Identify the Host NIC
+### Step 1: Identify the Trunk NIC
+
+You need to know which NIC will carry VLAN 100 tagged traffic to the US-24. Two common layouts:
+
+**Layout A — Single NIC (home LAN + VLAN trunk on same port):**
+The host has one wired NIC. Home LAN traffic arrives untagged; VLAN 100 traffic arrives tagged. The trunk NIC is the one with your home LAN IP.
 
 ```bash
-ip -brief link show
+ip -brief addr show | grep -v '^lo\|LOOPBACK'
+# The NIC with your home LAN IP (e.g. eno1 at 192.168.2.x) is the trunk NIC.
 ```
 
-Example output (names vary by hardware):
-```
-lo        UNKNOWN   127.0.0.1/8
-eno1      UP        192.168.2.50/24
+**Layout B — Dedicated NIC (separate port for VMs):**
+The host has a secondary or quad-port NIC dedicated to VM traffic. The home LAN NIC (`eno1`) keeps its IP. The VM trunk NIC has no IP and connects to a separate US-24 port with the Lab-VM-Trunk profile.
+
+```bash
+ip -brief addr show
+# Find the NIC with no IP that is connected to the Lab-VM-Trunk switch port.
+# Example: enp6s0f3 (part of a quad-port PCIe card)
 ```
 
-The NIC with a home LAN IP is the trunk NIC. Note the name (here `eno1`). Substitute it in all commands below.
+Substitute the correct NIC name for `<NIC>` in all commands below.
 
 ### Step 2: Install Prerequisites
 
@@ -105,50 +114,90 @@ sudo apt update
 sudo apt install -y bridge-utils
 ```
 
-### Step 3: Create VLAN Subinterface and Bridge via Netplan
+### Step 3: Add VLAN Subinterface and Bridge to Netplan
 
-Write a single Netplan file that defines the VLAN 100 subinterface and the `br-vm` bridge. Replace `eno1` with your actual NIC name in both the `vlans:` and `ethernets:` entries.
+**Check whether you have an existing Netplan file that already defines your NIC:**
+
+```bash
+grep -rl "<NIC>" /etc/netplan/
+```
+
+**Case 1 — No existing file defines `<NIC>` (or you are using Layout A with a fresh config):**
+
+Create a new Netplan file:
 
 ```bash
 sudo tee /etc/netplan/10-br-vm.yaml > /dev/null <<'EOF'
 network:
   version: 2
   renderer: NetworkManager
-  ethernets:
-    eno1:
-      dhcp4: true
   vlans:
-    eno1.100:
+    <NIC>.100:
       id: 100
-      link: eno1
+      link: <NIC>
       dhcp4: false
+      dhcp6: false
+      link-local: []
+      accept-ra: false
   bridges:
     br-vm:
       dhcp4: false
+      dhcp6: false
+      link-local: []
       interfaces:
-        - eno1.100
+        - <NIC>.100
       addresses:
         - 192.168.100.2/24
       parameters:
         stp: false
+        forward-delay: 0
       optional: true
 EOF
 sudo chmod 600 /etc/netplan/10-br-vm.yaml
 ```
 
+**Case 2 — An existing Netplan file already defines `<NIC>` (Layout B or a comprehensive system config):**
+
+Edit the existing file in place. Add a `vlans:` section and a `br-vm` entry under `bridges:`. Do not add a second `ethernets:` block for `<NIC>` — it is already declared. Example additions (merge into your existing file):
+
+```yaml
+  vlans:
+    <NIC>.100:
+      id: 100
+      link: <NIC>
+      dhcp4: false
+      dhcp6: false
+      link-local: []
+      accept-ra: false
+  bridges:
+    br-vm:
+      dhcp4: false
+      dhcp6: false
+      link-local: []
+      interfaces:
+        - <NIC>.100
+      addresses:
+        - 192.168.100.2/24
+      parameters:
+        stp: false
+        forward-delay: 0
+      optional: true
+```
+
 Notes:
 - `192.168.100.2/24` is the host's IP on the lab VLAN. VMs use `192.168.100.1` (UCG-Fiber) as their gateway, not the host.
-- `stp: false` removes the 30-second Spanning Tree forwarding delay on TAP attach events.
-- `optional: true` prevents the bridge from blocking boot while waiting for VMs to attach.
-- If NetworkManager is not installed (Ubuntu Server minimal), change `renderer: NetworkManager` to `renderer: networkd` and run `sudo systemctl enable --now systemd-networkd`.
-- If `eno1` already appears in another Netplan file (e.g., the system default in `/etc/netplan/`), remove or comment out the `ethernets: eno1:` block from this file to avoid conflicts.
+- No default route on `br-vm` — the host's default route stays on its home LAN NIC.
+- `stp: false` and `forward-delay: 0` eliminate the 30-second Spanning Tree delay on TAP attach.
+- `optional: true` prevents the bridge from blocking boot while waiting for VMs.
+- If NetworkManager is not installed (Ubuntu Server minimal), use `renderer: networkd` and run `sudo systemctl enable --now systemd-networkd`.
 
 Apply:
+
 ```bash
 sudo netplan apply
 
 # Verify both the VLAN interface and the bridge came up
-ip addr show eno1.100
+ip addr show <NIC>.100
 ip addr show br-vm | grep '192.168.100.2'
 ```
 
@@ -195,9 +244,9 @@ The `if` block is a no-op on systems without NetworkManager.
 ### Step 6: Verification
 
 ```bash
-# VLAN subinterface exists
-ip link show eno1.100
-# Expected: eno1.100@eno1: <...> state UP
+# VLAN subinterface exists (substitute your NIC name for <NIC>)
+ip link show <NIC>.100
+# Expected: <NIC>.100@<NIC>: <...> state UP
 
 # Bridge exists with the host IP
 ip addr show br-vm | grep '192.168.100.2'
@@ -205,7 +254,7 @@ ip addr show br-vm | grep '192.168.100.2'
 
 # VLAN subinterface is a bridge member
 bridge link show
-# Expected: eno1.100: <...> master br-vm
+# Expected: <NIC>.100: <...> master br-vm
 
 # qemu-bridge-helper is setuid
 ls -la /usr/lib/qemu/qemu-bridge-helper | grep '^-rws'
@@ -221,7 +270,7 @@ All five checks should produce output. If any fail, fix that step before continu
 
 | Component | Path | Purpose |
 |-----------|------|---------|
-| Netplan config | `/etc/netplan/10-br-vm.yaml` | Defines `eno1.100` VLAN subinterface and `br-vm` bridge |
+| Netplan config | `/etc/netplan/10-br-vm.yaml` (new) or existing file (in-place edit) | Defines `<NIC>.100` VLAN subinterface and `br-vm` bridge |
 | QEMU helper allow-list | `/etc/qemu/bridge.conf` | Permits unprivileged attach to `br-vm` |
 | QEMU helper binary | `/usr/lib/qemu/qemu-bridge-helper` | setuid root, creates TAP interfaces |
 | NM TAP exclusion | `/etc/NetworkManager/conf.d/10-unmanaged-tap.conf` | Prevents NM from managing QEMU TAP interfaces |
