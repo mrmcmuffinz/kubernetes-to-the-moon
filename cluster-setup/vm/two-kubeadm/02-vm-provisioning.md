@@ -2,7 +2,7 @@
 
 **Based on:** [01-qemu-vm-setup.md](../../vm/docs/01-qemu-vm-setup.md) from the single-node guide.
 
-**Adapted for:** Two VMs on a host bridge instead of one VM with QEMU user-mode networking. Cloud-init now configures a static IP per VM and writes both nodes into `/etc/hosts` so name resolution works without DNS.
+**Adapted for:** Two VMs on a host bridge instead of one VM with QEMU user-mode networking. Cloud-init now configures a static IP per VM via a `network-config` seed file and writes both nodes into `/etc/hosts` so name resolution works without DNS.
 
 ---
 
@@ -10,13 +10,13 @@
 
 Creates two headless Ubuntu 24.04 VMs (`controlplane-1` and `nodes-1`) attached to the `br-vm` bridge from the previous document. Each VM gets a static IP via cloud-init, your SSH key, the `kube` user with passwordless sudo, kernel modules and sysctls for Kubernetes, and is rebooted once at the end of cloud-init so all changes take effect cleanly.
 
-The single-node guide used QEMU user-mode networking and a single `create-node.sh` script. This guide uses bridge networking and a `create-cluster.sh` script that wraps `create-node.sh` to provision both VMs in a single command, plus cluster-level `start-cluster.sh` and `stop-cluster.sh`.
+The single-node guide used QEMU user-mode networking and a single `create-node.sh` script. This guide uses bridge networking and a `create-cluster.sh` script that provisions both VMs in a single command, plus cluster-level `start-cluster.sh`, `stop-cluster.sh`, and `destroy-cluster.sh`.
 
 ## What Was Removed from the Original Script
 
 - **Port forwarding for SSH and component APIs.** No longer needed. With real IPs on the bridge, you SSH directly to `192.168.100.10` or `192.168.100.11`, and `kubectl` from the host points at `https://192.168.100.10:6443`.
 - **`hostfwd` flags on the QEMU command line.** Replaced with `-netdev bridge,br=br-vm`.
-- **`network: config: disabled`** in cloud-init. The single-node guide disabled cloud-init networking because QEMU user-mode handled DHCP. With a physical LAN bridge, cloud-init still generates `/etc/netplan/50-cloud-init.yaml` with DHCP at boot. The `runcmd` block removes that file before applying Netplan, leaving only the static config from `write_files`.
+- **Netplan via `write_files` + `runcmd`.** The single-node guide wrote `/etc/netplan/01-static.yaml` in `write_files` and then called `netplan apply` in `runcmd`. Both run in `modules:final`, after `package-update-upgrade-install`, so packages installed before the static IP was set. This guide uses a `network-config` seed file instead. Cloud-init reads `network-config` in `cloud-init-local` (the pre-network stage), writes the Netplan config, and applies it before `systemd-networkd` starts. The static IP is in place before `wait-online` runs, and packages install with a working interface.
 
 ## Prerequisites
 
@@ -41,8 +41,16 @@ The Ubuntu cloud image is reused from the single-node guide. If you do not have 
 
 ```bash
 mkdir -p ~/cka-lab/images
-cd ~/cka-lab/images
-wget https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img
+wget -O ~/cka-lab/images/ubuntu-24.04-server-cloudimg-amd64.img \
+  https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img
+```
+
+The script also assumes an apt-cache proxy is running on the host bridge IP (`192.168.100.2:3142`). See [`../apt-cache-proxy.md`](../apt-cache-proxy.md) for setup. The proxy caches Ubuntu and Kubernetes packages so VMs on the VLAN-isolated `192.168.100.0/24` network do not need direct internet access.
+
+A binary cache directory is bind-mounted into each VM via virtio-9p as `/mnt/bincache`. Create it once on the host:
+
+```bash
+mkdir -p ~/cka-lab/binary-cache
 ```
 
 ---
@@ -55,17 +63,19 @@ The script creates the following layout:
 ~/cka-lab/
   images/                   # Cached cloud images (shared with single-node guide)
     ubuntu-24.04-server-cloudimg-amd64.img
+  binary-cache/             # Shared host directory mounted as /mnt/bincache in each VM
   two-kubeadm/
     create-cluster.sh       # Provisions both VMs
     start-cluster.sh        # Starts both VMs
     stop-cluster.sh         # Stops both VMs cleanly
     destroy-cluster.sh      # Removes per-VM directories (keeps cached image)
     controlplane-1/
-      controlplane-1.qcow2           # controlplane-1 disk (backed by cloud image)
-      seed.iso              # Cloud-init ISO
+      controlplane-1.qcow2  # controlplane-1 disk (backed by cloud image)
+      seed.iso              # Cloud-init NoCloud seed ISO
       cloud-init/
         user-data
         meta-data
+        network-config
       start-controlplane-1.sh
       stop-controlplane-1.sh
     nodes-1/
@@ -74,6 +84,7 @@ The script creates the following layout:
       cloud-init/
         user-data
         meta-data
+        network-config
       start-nodes-1.sh
       stop-nodes-1.sh
 ```
@@ -84,7 +95,16 @@ The `two-kubeadm/` parent directory keeps everything separate from the single-no
 
 ## Part 2: The create-cluster.sh Script
 
-Save the following as `~/cka-lab/two-kubeadm/create-cluster.sh` and make it executable.
+The script is checked into the repository at `cluster-setup/vm/two-kubeadm/scripts/create-cluster.sh`. Copy it to the cluster directory and make it executable:
+
+```bash
+mkdir -p ~/cka-lab/two-kubeadm
+cp /path/to/repo/cluster-setup/vm/two-kubeadm/scripts/create-cluster.sh \
+  ~/cka-lab/two-kubeadm/create-cluster.sh
+chmod +x ~/cka-lab/two-kubeadm/create-cluster.sh
+```
+
+Or paste the script directly if you do not have the repo on the host:
 
 ```bash
 #!/usr/bin/env bash
@@ -93,7 +113,7 @@ Save the following as `~/cka-lab/two-kubeadm/create-cluster.sh` and make it exec
 #
 # Provisions two headless Ubuntu 24.04 VMs (controlplane-1, nodes-1) for the two-kubeadm
 # Kubernetes cluster lab. Both VMs attach to the host bridge br-vm from
-# 01-host-bridge-setup.md.
+# 01-host-bridge-setup.md (which references ../00-vlan-host-network-setup.md).
 #
 # Usage:
 #   ./create-cluster.sh                                              # both VMs, default IPs
@@ -101,7 +121,8 @@ Save the following as `~/cka-lab/two-kubeadm/create-cluster.sh` and make it exec
 #   ./create-cluster.sh nodes-1                                      # one VM only
 #   ./create-cluster.sh --gateway 192.168.100.1 \
 #                       --cp-ip 192.168.100.10 \
-#                       --worker-ip 192.168.100.11                   # override defaults
+#                       --worker-ip 192.168.100.11 \
+#                       --apt-proxy-host 192.168.100.2               # override defaults
 
 set -euo pipefail
 
@@ -125,6 +146,7 @@ VM_PASSWORD="kubeadmin"
 
 BRIDGE="br-vm"
 GATEWAY="192.168.100.1"
+APT_PROXY_HOST="192.168.100.2"  # Host bridge IP (apt-cache proxy runs on the QEMU host)
 
 # Per-node configuration
 declare -A NODES=(
@@ -135,15 +157,16 @@ declare -A NODES=(
 # -------------------------------------------------------------------
 # Argument overrides (override defaults without editing this file)
 # -------------------------------------------------------------------
-# Usage: ./create-cluster.sh [--gateway IP] [--cp-ip IP] [--worker-ip IP] [node-name...]
+# Usage: ./create-cluster.sh [--gateway IP] [--cp-ip IP] [--worker-ip IP] [--apt-proxy-host IP] [node-name...]
 NODE_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --gateway)   GATEWAY="${2:?--gateway requires a value}";              shift 2 ;;
-    --cp-ip)     NODES[controlplane-1]="${2:?--cp-ip requires a value}";  shift 2 ;;
-    --worker-ip) NODES[nodes-1]="${2:?--worker-ip requires a value}";     shift 2 ;;
-    --*)         echo "ERROR: Unknown option $1"; exit 1 ;;
-    *)           NODE_ARGS+=("$1"); shift ;;
+    --gateway)       GATEWAY="${2:?--gateway requires a value}";              shift 2 ;;
+    --cp-ip)         NODES[controlplane-1]="${2:?--cp-ip requires a value}";  shift 2 ;;
+    --worker-ip)     NODES[nodes-1]="${2:?--worker-ip requires a value}";     shift 2 ;;
+    --apt-proxy-host) APT_PROXY_HOST="${2:?--apt-proxy-host requires a value}"; shift 2 ;;
+    --*)             echo "ERROR: Unknown option $1"; exit 1 ;;
+    *)               NODE_ARGS+=("$1"); shift ;;
   esac
 done
 
@@ -159,11 +182,6 @@ fi
 
 if ! command -v qemu-system-x86_64 &>/dev/null; then
   echo "ERROR: qemu-system-x86_64 not found. Install qemu-system-x86 first."
-  exit 1
-fi
-
-if ! command -v qemu-img &>/dev/null; then
-  echo "ERROR: qemu-img not found. Install qemu-utils first."
   exit 1
 fi
 
@@ -215,20 +233,6 @@ else
 fi
 
 # -------------------------------------------------------------------
-# Function: create_qcow2
-# -------------------------------------------------------------------
-create_qcow2() {
-  local node_dir="$1"
-  local node_name="$2"
-  qemu-img create -f qcow2 \
-    -b "$(realpath "$IMAGE_FILE")" \
-    -F qcow2 \
-    "$node_dir/${node_name}.qcow2" \
-    "$DISK_SIZE"
-  echo "Disk created: $node_dir/${node_name}.qcow2 ($DISK_SIZE, backed by cloud image)"
-}
-
-# -------------------------------------------------------------------
 # Function: provision_node
 # -------------------------------------------------------------------
 provision_node() {
@@ -243,24 +247,43 @@ provision_node() {
   mkdir -p "$node_dir/cloud-init"
 
   # Disk
-  echo "=== Creating VM disk for $node_name ==="
   if [[ -f "$node_dir/${node_name}.qcow2" ]]; then
     echo "WARNING: Disk $node_dir/${node_name}.qcow2 already exists."
-    confirm=""
-    read -rt 10 -p "Overwrite? (y/N, default N in 10s): " confirm || confirm=""
-    if [[ "${confirm,,}" == "y" ]]; then
-      create_qcow2 "$node_dir" "$node_name"
-    else
-      echo "Keeping existing disk. Continuing with cloud-init and script generation."
+    read -rp "Overwrite? (y/N): " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+      echo "Skipping $node_name."
+      return 0
     fi
-  else
-    create_qcow2 "$node_dir" "$node_name"
   fi
+
+  qemu-img create -f qcow2 \
+    -b "$(realpath "$IMAGE_FILE")" \
+    -F qcow2 \
+    "$node_dir/${node_name}.qcow2" \
+    "$DISK_SIZE"
+  echo "Disk created: $node_dir/${node_name}.qcow2"
 
   # cloud-init metadata
   cat > "$node_dir/cloud-init/meta-data" <<EOF
 instance-id: $node_name
 local-hostname: $node_name
+EOF
+
+  # cloud-init network-config: read in cloud-init-local (pre-network stage) so the
+  # static IP is assigned before systemd-networkd-wait-online runs on first boot.
+  cat > "$node_dir/cloud-init/network-config" <<EOF
+network:
+  version: 2
+  ethernets:
+    enp0s2:
+      dhcp4: false
+      addresses:
+        - $node_ip/24
+      routes:
+        - to: default
+          via: $GATEWAY
+      nameservers:
+        addresses: [1.1.1.1, 8.8.8.8]
 EOF
 
   # cloud-init user-data
@@ -283,6 +306,15 @@ users:
 
 ssh_pwauth: true
 
+apt:
+  preserve_sources_list: false
+  sources_list: |
+    Types: deb
+    URIs: http://$APT_PROXY_HOST:3142/mirror.arizona.edu/ubuntu/
+    Suites: noble noble-updates noble-backports noble-security
+    Components: main restricted universe multiverse
+    Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
 packages:
   - apt-transport-https
   - ca-certificates
@@ -302,20 +334,11 @@ write_files:
       127.0.0.1 localhost
       ${NODES[controlplane-1]} controlplane-1 controlplane-1.cka.local
       ${NODES[nodes-1]} nodes-1 nodes-1.cka.local
-  - path: /etc/netplan/01-static.yaml
-    permissions: '0600'
+  - path: /etc/modules-load.d/9p.conf
     content: |
-      network:
-        version: 2
-        ethernets:
-          enp0s2:
-            dhcp4: false
-            addresses: [$node_ip/24]
-            routes:
-              - to: default
-                via: $GATEWAY
-            nameservers:
-              addresses: [1.1.1.1, 8.8.8.8]
+      9p
+      9pnet_virtio
+    permissions: '0644'
   - path: /etc/modules-load.d/k8s.conf
     content: |
       overlay
@@ -326,9 +349,21 @@ write_files:
       net.bridge.bridge-nf-call-ip6tables = 1
       net.ipv4.ip_forward                 = 1
 
+mounts:
+  - [bincache, /mnt/bincache, 9p, "trans=virtio,version=9p2000.L,nofail,_netdev", "0", "0"]
+
 runcmd:
-  - rm -f /etc/netplan/50-cloud-init.yaml
-  - netplan apply
+  - mkdir -p /etc/apt/keyrings
+  - curl -fsSL http://$APT_PROXY_HOST:3142/pkgs.k8s.io/core:/stable:/v1.35/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  - |
+    cat > /etc/apt/sources.list.d/kubernetes.sources <<'KUBE_EOF'
+    Types: deb
+    URIs: http://$APT_PROXY_HOST:3142/pkgs.k8s.io/core:/stable:/v1.35/deb/
+    Suites: /
+    Components:
+    Signed-By: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    KUBE_EOF
+  - apt-get update
   - modprobe overlay
   - modprobe br_netfilter
   - sysctl --system
@@ -342,11 +377,12 @@ power_state:
   condition: true
 EOF
 
-  # Build cloud-init ISO
+  # Build cloud-init ISO (three files: user-data, meta-data, network-config)
   genisoimage -output "$node_dir/seed.iso" \
     -volid cidata -joliet -rock \
     "$node_dir/cloud-init/user-data" \
-    "$node_dir/cloud-init/meta-data" 2>/dev/null
+    "$node_dir/cloud-init/meta-data" \
+    "$node_dir/cloud-init/network-config" 2>/dev/null
   echo "cloud-init ISO created: $node_dir/seed.iso"
 
   # Per-VM start script. The MAC address last octet matches the IP last
@@ -377,6 +413,7 @@ qemu-system-x86_64 \\
     -serial file:"\$SCRIPT_DIR/${node_name}-console.log" \\
     -daemonize \\
     -pidfile "\$SCRIPT_DIR/${node_name}.pid" \\
+    -virtfs local,path="${HOME}/cka-lab/binary-cache",mount_tag=bincache,security_model=none,id=bincache \\
     "\$@"
 
 echo "${node_name} started (PID \$(cat "\$SCRIPT_DIR/${node_name}.pid"))."
@@ -503,11 +540,7 @@ echo "============================================="
 ## Part 3: Run the Script
 
 ```bash
-mkdir -p ~/cka-lab/two-kubeadm
 cd ~/cka-lab/two-kubeadm
-
-# Save the script above as create-cluster.sh
-chmod +x create-cluster.sh
 
 # Provision both VMs
 ./create-cluster.sh
@@ -515,10 +548,12 @@ chmod +x create-cluster.sh
 # Boot them
 ./start-cluster.sh
 
-# Watch first boot. Cloud-init runs, reboots, then the second boot finishes.
+# Watch first boot. Cloud-init runs, reboots, then the second boot finishes quickly.
 tail -f controlplane-1/controlplane-1-console.log
 # Ctrl-C once you see a login prompt, then check nodes-1 the same way.
 ```
+
+First boot: cloud-init runs `cloud-init-local` at ~4 seconds (static IP assigned), packages install via the apt proxy, then the VM reboots. Allow 60-90 seconds total depending on proxy cache warmth. Second boot completes in under 10 seconds.
 
 ---
 
@@ -546,7 +581,7 @@ If your SSH key is at a different path, adjust the `IdentityFile` line according
 
 ## Part 5: Verify Both VMs
 
-After cloud-init completes (60 to 90 seconds for the first boot, plus the reboot), verify everything is in place. Run from the host:
+After cloud-init completes and the VM reboots, verify everything is in place. Run from the host:
 
 ```bash
 # Both VMs respond to ping
@@ -561,9 +596,9 @@ ssh nodes-1 'hostname && ip -4 addr show enp0s2 | grep inet'
 ssh controlplane-1 'ping -c 2 nodes-1'
 ssh nodes-1 'ping -c 2 controlplane-1'
 
-# Both have internet (via UCG-Fiber gateway at 192.168.100.1)
-ssh controlplane-1 'curl -sI -o /dev/null -w "%{http_code}\n" https://kubernetes.io'
-ssh nodes-1 'curl -sI -o /dev/null -w "%{http_code}\n" https://kubernetes.io'
+# Binary cache mount is visible
+ssh controlplane-1 'ls /mnt/bincache'
+ssh nodes-1 'ls /mnt/bincache'
 
 # Cloud-init reports done
 ssh controlplane-1 'cloud-init status'
@@ -574,14 +609,18 @@ All checks should pass before moving to document 03.
 
 ### What Cloud-Init Pre-Configures
 
-Same set as the single-node guide, plus the static IP. On both VMs after first boot:
+On both VMs after first boot:
 
 - Hostname set to `controlplane-1` or `nodes-1`
 - `/etc/hosts` populated with both nodes for name resolution without DNS
-- Static IP assigned via netplan, bound to interface `enp0s2`
+- Static IP assigned via `network-config` seed file, processed in `cloud-init-local` (pre-network stage) so the IP is up before `systemd-networkd-wait-online` runs
 - `kube` user created with passwordless sudo and your SSH key authorized
+- Ubuntu apt sources pointed at the nginx apt proxy (`192.168.100.2:3142`) for all packages
+- Kubernetes apt keyring and source file written and indexed (`apt-get update`)
 - Baseline packages installed (`socat`, `conntrack`, `ipset`, `curl`, `jq`, others)
 - `overlay` and `br_netfilter` kernel modules loaded
+- 9p and 9pnet_virtio modules loaded for the binary cache virtio-9p mount
+- `/mnt/bincache` mounted from the host via virtio-9p
 - Sysctls set for bridge filtering and IPv4 forwarding
 - Swap disabled permanently
 - Reboot once after cloud-init to apply everything cleanly

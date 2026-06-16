@@ -160,6 +160,23 @@ instance-id: $node_name
 local-hostname: $node_name
 EOF
 
+  # cloud-init network-config: read in cloud-init-local (pre-network stage) so the
+  # static IP is assigned before systemd-networkd-wait-online runs on first boot.
+  cat > "$node_dir/cloud-init/network-config" <<EOF
+network:
+  version: 2
+  ethernets:
+    enp0s2:
+      dhcp4: false
+      addresses:
+        - $node_ip/24
+      routes:
+        - to: default
+          via: $GATEWAY
+      nameservers:
+        addresses: [1.1.1.1, 8.8.8.8]
+EOF
+
   # cloud-init user-data
   cat > "$node_dir/cloud-init/user-data" <<EOF
 #cloud-config
@@ -208,20 +225,6 @@ write_files:
       127.0.0.1 localhost
       ${NODES[controlplane-1]} controlplane-1 controlplane-1.cka.local
       ${NODES[nodes-1]} nodes-1 nodes-1.cka.local
-  - path: /etc/netplan/01-static.yaml
-    permissions: '0600'
-    content: |
-      network:
-        version: 2
-        ethernets:
-          enp0s2:
-            dhcp4: false
-            addresses: [$node_ip/24]
-            routes:
-              - to: default
-                via: $GATEWAY
-            nameservers:
-              addresses: [1.1.1.1, 8.8.8.8]
   - path: /etc/modules-load.d/9p.conf
     content: |
       9p
@@ -241,8 +244,6 @@ mounts:
   - [bincache, /mnt/bincache, 9p, "trans=virtio,version=9p2000.L,nofail,_netdev", "0", "0"]
 
 runcmd:
-  - rm -f /etc/netplan/50-cloud-init.yaml
-  - netplan apply
   - mkdir -p /etc/apt/keyrings
   - curl -fsSL http://$APT_PROXY_HOST:3142/pkgs.k8s.io/core:/stable:/v1.35/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
   - |
@@ -271,7 +272,8 @@ EOF
   genisoimage -output "$node_dir/seed.iso" \
     -volid cidata -joliet -rock \
     "$node_dir/cloud-init/user-data" \
-    "$node_dir/cloud-init/meta-data" 2>/dev/null
+    "$node_dir/cloud-init/meta-data" \
+    "$node_dir/cloud-init/network-config" 2>/dev/null
   echo "cloud-init ISO created: $node_dir/seed.iso"
 
   # Per-VM start script. The MAC address last octet matches the IP last

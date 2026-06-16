@@ -193,8 +193,10 @@ server {
     location ~ ^/pkgs\.k8s\.io/(.*)$ {
         proxy_pass https://pkgs.k8s.io/$1$is_args$args;
         proxy_intercept_errors off;
-        # Rewrite redirects to prod-cdn.packages.k8s.io to go through proxy
-        proxy_redirect https://prod-cdn.packages.k8s.io/ http://$http_host/prod-cdn.packages.k8s.io/;
+        # Rewrite redirects to prod-cdn.packages.k8s.io to go through proxy.
+        # $server_addr:$server_port reflects the IP the client connected to, so
+        # the redirect works correctly regardless of which interface or VLAN was used.
+        proxy_redirect https://prod-cdn.packages.k8s.io/ http://$server_addr:$server_port/prod-cdn.packages.k8s.io/;
         add_header X-Cache-Status $upstream_cache_status;
     }
     
@@ -502,10 +504,10 @@ Some repositories use CloudFront CDNs that require SNI (Server Name Indication).
 `pkgs.k8s.io` returns HTTP redirects to `prod-cdn.packages.k8s.io`. Without `proxy_redirect`, clients follow the redirect directly to the CDN and bypass the cache. The config above includes:
 
 ```nginx
-proxy_redirect https://prod-cdn.packages.k8s.io/ http://$http_host/prod-cdn.packages.k8s.io/;
+proxy_redirect https://prod-cdn.packages.k8s.io/ http://$server_addr:$server_port/prod-cdn.packages.k8s.io/;
 ```
 
-This rewrites redirect responses to point back through the proxy. If you see cache misses for Kubernetes packages or direct CDN connections in logs, verify this directive is present in the `pkgs.k8s.io` location block.
+This rewrites redirect responses to point back through the proxy. Using `$server_addr:$server_port` keeps the redirect pointing at the same interface the client connected to, which matters when nginx is reachable on multiple IPs (for example, both a main LAN address and a VLAN bridge address). If you see cache misses for Kubernetes packages or direct CDN connections in logs, verify this directive is present in the `pkgs.k8s.io` location block.
 
 **Cache not populating**
 
