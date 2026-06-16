@@ -1,8 +1,8 @@
 # Raspberry Pi 5 Kubeadm Cluster: Overview
 
 A three-node Kubernetes cluster on bare-metal Raspberry Pi 5 8GB nodes. One control
-plane, two workers. Ubuntu Server 24.04 LTS ARM64. Uses the same `kubeadm` workflow as
-the `three-kubeadm` QEMU guide but runs on real hardware with ARM64 packages.
+plane, two workers. Raspberry Pi OS Trixie Lite (arm64). Uses the same `kubeadm`
+workflow as the `three-kubeadm` QEMU guide but runs on real hardware with ARM64 packages.
 
 ---
 
@@ -25,9 +25,9 @@ No host bridge needed; Pi nodes plug directly into US-24 access ports on VLAN 20
 | Address | Role |
 |---------|------|
 | `192.168.200.1` | UCG-Fiber gateway (VLAN 200) |
-| `192.168.200.10` | `pi-cp` (control plane) |
-| `192.168.200.11` | `pi-w1` (worker 1) |
-| `192.168.200.12` | `pi-w2` (worker 2) |
+| `192.168.200.10` | `rpi-node-01` (control plane) |
+| `192.168.200.11` | `rpi-node-02` (worker 1) |
+| `192.168.200.12` | `rpi-node-03` (worker 2) |
 
 Internal Kubernetes ranges (same as all other kubeadm guides):
 
@@ -40,10 +40,10 @@ Internal Kubernetes ranges (same as all other kubeadm guides):
 
 | Component | Version | Source |
 |-----------|---------|--------|
-| Ubuntu Server | 24.04 LTS (ARM64) | `ubuntu.com/download/raspberry-pi` |
+| Raspberry Pi OS | Trixie Lite (arm64) | `raspberrypi.com/software/operating-systems` |
 | Kubernetes | v1.35.3 | `pkgs.k8s.io` (arch=arm64) |
-| containerd | Ubuntu 24.04 apt | `apt install containerd` |
-| runc | Ubuntu 24.04 apt | `apt install runc` |
+| containerd | Debian Trixie apt | `apt install containerd` |
+| runc | Debian Trixie apt | `apt install runc` |
 | cri-tools (crictl) | v1.35.0 | GitHub release (arm64) |
 | CNI plugins | v1.7.1 | GitHub release (arm64) |
 | Calico | v3.31.0 | Tigera operator manifest (pulls ARM64 images automatically) |
@@ -65,8 +65,8 @@ Internal Kubernetes ranges (same as all other kubeadm guides):
 | Aspect | QEMU guides | Pi guide |
 |--------|------------|---------|
 | Architecture | x86_64 | ARM64 |
-| OS delivery | QEMU cloud image + cloud-init | Flashed with Raspberry Pi Imager |
-| Cloud-init | Used for VM network and user setup | Not used (manual config after flash) |
+| OS delivery | QEMU cloud image + cloud-init | Flashed with `dd` from pre-configured image |
+| Cloud-init | Used for VM network and user setup | Used in patched image for keyboard layout and swap disable; not used after first boot |
 | Cgroup config | Not required (cloud image defaults work) | Required: `cmdline.txt` must include `cgroup_enable=memory cgroup_memory=1` |
 | Package arch | `amd64` | `arm64` |
 | Bridge on host | `br-vm` at `192.168.100.2` | Not needed; Pis connect directly to switch |

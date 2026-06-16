@@ -1,10 +1,10 @@
 # Control Plane Initialization
 
-**Purpose:** Run `kubeadm init` on `pi-cp` to bring up the full control plane (etcd,
+**Purpose:** Run `kubeadm init` on `rpi-node-01` to bring up the full control plane (etcd,
 kube-apiserver, kube-controller-manager, kube-scheduler) and generate the join token
 for the worker nodes.
 
-This document runs on `pi-cp` only.
+This document runs on `rpi-node-01` only.
 
 ---
 
@@ -15,7 +15,7 @@ Document 03 must be complete on all three nodes.
 Quick check:
 
 ```bash
-# On pi-cp
+# On rpi-node-01
 kubeadm version -o short
 # Expected: v1.35.x
 
@@ -31,7 +31,7 @@ swapon --show
 ## Part 1: kubeadm init
 
 Use a YAML config file to set the key parameters explicitly. The `controlPlaneEndpoint`
-is the static IP of `pi-cp` (no HAProxy needed for a single control plane).
+is the static IP of `rpi-node-01` (no HAProxy needed for a single control plane).
 
 ```bash
 sudo tee /tmp/kubeadm-config.yaml > /dev/null <<'EOF'
@@ -63,7 +63,7 @@ It uploads the certs to a kubeadm-certs Secret in the cluster and prints a `--ce
 
 ---
 
-## Part 2: Configure kubectl on pi-cp
+## Part 2: Configure kubectl on rpi-node-01
 
 ```bash
 mkdir -p $HOME/.kube
@@ -72,7 +72,7 @@ sudo chown $(id -u):$(id -g) $HOME/.kube/config
 
 # Verify
 kubectl get nodes
-# Expected: pi-cp   NotReady   control-plane   <age>   v1.35.x
+# Expected: rpi-node-01   NotReady   control-plane   <age>   v1.35.x
 ```
 
 `NotReady` is expected at this stage because there is no CNI plugin yet.
@@ -85,18 +85,18 @@ Run this on the **host machine**:
 
 ```bash
 mkdir -p ~/cka-lab/pi-kubeadm
-scp pi-cp:.kube/config ~/cka-lab/pi-kubeadm/admin.conf
+scp rpi-node-01:.kube/config ~/cka-lab/pi-kubeadm/admin.conf
 
 # Test from host
 KUBECONFIG=~/cka-lab/pi-kubeadm/admin.conf kubectl get nodes
-# Expected: pi-cp   NotReady   control-plane   ...
+# Expected: rpi-node-01   NotReady   control-plane   ...
 ```
 
 ---
 
 ## Part 4: Install Calico CNI
 
-Still on `pi-cp`:
+Still on `rpi-node-01`:
 
 ```bash
 # Install Tigera operator
@@ -136,9 +136,9 @@ image manifests. No additional configuration is needed.
 ## Part 5: Verification
 
 ```bash
-# pi-cp should now be Ready
+# rpi-node-01 should now be Ready
 kubectl get nodes
-# Expected: pi-cp   Ready   control-plane   <age>   v1.35.x
+# Expected: rpi-node-01   Ready   control-plane   <age>   v1.35.x
 
 # All system pods should be Running
 kubectl get pods -n kube-system
@@ -152,7 +152,7 @@ curl -k https://192.168.200.10:6443/healthz
 kubeadm token create --print-join-command
 ```
 
-**Result:** `pi-cp` is a single-node cluster with Calico CNI. Workers will join in
+**Result:** `rpi-node-01` is a single-node cluster with Calico CNI. Workers will join in
 document 05.
 
 ---

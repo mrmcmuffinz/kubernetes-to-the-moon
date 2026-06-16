@@ -61,10 +61,18 @@ These steps run in **UniFi Network** under the US-24 switch device.
    **Common mistake:** Selecting the port profile automatically populates the Native VLAN field. If it auto-fills to `Lab-VMs` (VLAN 100) instead of `Default`, change it back to `Default`. With Native VLAN = Lab-VMs, the switch strips the VLAN 100 tag on frames sent to the host, and the Linux VLAN subinterface (`enp6s0f3.100`) silently discards them because it only accepts tagged frames. The symptom is ARP for the gateway completes on the physical NIC but stays `INCOMPLETE` in the kernel ARP table.
 
 3. Create profile **"Lab-Pi-Access"**:
-   - Native VLAN: `200` (Lab-Pi)
+   - Native VLAN: `Lab-Pi` (VLAN 200)
    - Tagged VLAN Management: `Block All` (correct for access ports; Pi nodes expect untagged frames)
    - Tagged VLANs: (none)
    - Purpose: Pi nodes connect as plain access-port clients; they receive only VLAN 200 frames with no 802.1Q tag
+
+4. Create profile **"Lab-Pi-Trunk"**:
+   - Native VLAN: `Default` (VLAN 1)
+   - **Tagged VLAN Management:** set to `Custom`
+   - Tagged VLANs: `Lab-Pi` (VLAN 200)
+   - Purpose: The host port for the dedicated Pi VLAN NIC (`enp6s0f0`) carries tagged VLAN 200 frames. The Linux VLAN subinterface (`enp6s0f0.200`) strips the tag.
+
+> **Critical:** `Lab-Pi-Trunk` and `Lab-Pi-Access` have opposite Native VLAN settings and must never be swapped. The host NIC (`enp6s0f0`) uses tagged frames and needs Native VLAN = Default. Pi devices use untagged frames and need Native VLAN = Lab-Pi (VLAN 200). Applying the same profile to both port types is the most common setup mistake -- see the Troubleshooting section for the failure mode.
 
 ### Assign Profiles to Ports
 
@@ -72,14 +80,15 @@ In the US-24 port manager, assign:
 
 | Port | Device | Profile |
 |------|--------|---------|
-| (QEMU host port) | Desktop / workstation running QEMU | `Lab-VM-Trunk` |
+| (QEMU host port) | Desktop / workstation running QEMU (`enp6s0f3`) | `Lab-VM-Trunk` |
+| (Pi VLAN host port) | Same host, dedicated Pi VLAN NIC (`enp6s0f0`) | `Lab-Pi-Trunk` |
 | (Pi port 1) | `pi-cp` (control plane) | `Lab-Pi-Access` |
 | (Pi port 2) | `pi-w1` (worker 1) | `Lab-Pi-Access` |
 | (Pi port 3) | `pi-w2` (worker 2) | `Lab-Pi-Access` |
 
 Save the port assignments.
 
-**Verification:** In the port manager, confirm each port shows the correct profile. Ports on Lab-Pi-Access should show VLAN 200 as the native VLAN.
+**Verification:** In the port manager, confirm each port shows the correct profile. The Pi VLAN host port should show VLAN 200 as a tagged VLAN. Pi device ports should show VLAN 200 as the native VLAN.
 
 ---
 
@@ -394,3 +403,60 @@ ping -c 2 192.168.200.12   # pi-w2
 The UCG-Fiber routes traffic for both lab VLANs. VMs set `192.168.100.1` (or `192.168.200.1` for Pi nodes) as their default gateway in their network config. Internet traffic flows VM → br-vm (L2) → VLAN 100 trunk → US-24 → UCG-Fiber → WAN. The host does not perform NAT.
 
 If firewall rules on the UCG-Fiber block internet access from lab VLANs by default (depends on your UniFi configuration), add outbound allow rules in Settings → Firewall & Security → Rules for the Lab-VMs and Lab-Pi networks.
+
+---
+
+## Troubleshooting
+
+### VMs lose network connectivity after `netplan apply`
+
+**Symptom:** After any `netplan apply` run, VMs are unreachable even though the bridge is up. The UCG-Fiber gateway (`192.168.100.1`) still responds on `br-vm` but pinging a VM IP produces 100% packet loss. ARP shows `(incomplete)` for VM IPs. `bridge link show` lists only `enp6s0f3.100` -- the TAP interfaces are gone.
+
+**Cause:** The netplan renderer is NetworkManager. When `netplan apply` regenerates NM connection profiles, NM re-provisions `br-vm` from its stored config. This briefly resets the bridge and reattaches only the members it knows about -- `enp6s0f3.100`, which is defined in the netplan `interfaces:` list. QEMU's TAP interfaces (`tap0`, `tap1`, etc.) are attached to the bridge dynamically at VM startup and are never written into the netplan config. When NM reconstructs the bridge, the kernel clears that dynamic membership. The QEMU processes keep running and hold the TAP file descriptors open, but the TAPs are no longer in the bridge. The `unmanaged-devices=interface-name:tap*` rule in `10-unmanaged-tap.conf` only prevents NM from configuring the TAPs -- it does not protect their bridge membership when the bridge itself is re-provisioned.
+
+**Immediate fix:** Reattach the TAP interfaces to the bridge manually:
+
+```bash
+# Identify how many TAPs exist
+bridge link show
+ip link show type tuntap
+
+# Reattach each TAP (adjust names to match your setup)
+sudo ip link set tap0 master br-vm
+sudo ip link set tap1 master br-vm
+
+# Verify
+bridge link show
+# Expected: enp6s0f3.100, tap0, and tap1 all listed under br-vm
+
+ping -c 2 -I br-vm 192.168.100.10
+# Expected: replies from the VM
+```
+
+ARP entries that showed `(incomplete)` will resolve automatically on the next ping after the TAPs are reattached.
+
+**Prevention:** Do not run `netplan apply` while VMs are running. The safe sequence for any host network change is:
+
+1. Shut down all VMs gracefully.
+2. Run `sudo netplan apply`.
+3. Verify the new network config.
+4. Start VMs back up (QEMU reattaches the TAPs on startup).
+
+---
+
+### Pi unreachable from host but host can ping gateway; or Pi can ping gateway after profile change but host then loses gateway
+
+**Symptom A:** Pi's `eth0` is UP with the correct static IP, default route is set, physical link shows `LOWER_UP`, yet the Pi cannot ping `192.168.200.1` and the host cannot ping the Pi. Both the gateway and the Pi appear unreachable at L2.
+
+**Symptom B:** Changing the port profile on the Pi's switch port fixes the Pi (it can now ping the gateway), but the host immediately loses `192.168.200.1` reachability on `enp6s0f0.200`.
+
+**Cause:** The host port (carrying `enp6s0f0`) and the Pi ports are sharing the same port profile, or the profiles have their Native VLAN settings reversed. The two port types need opposite configurations:
+
+| Port type | Device | Native VLAN | Tagged VLANs |
+|-----------|--------|-------------|--------------|
+| `Lab-Pi-Trunk` | Host `enp6s0f0` | Default (VLAN 1) | Lab-Pi (VLAN 200) |
+| `Lab-Pi-Access` | Pi `eth0` | Lab-Pi (VLAN 200) | None (Block All) |
+
+The host NIC uses a VLAN subinterface (`enp6s0f0.200`) that sends and receives tagged VLAN 200 frames -- it requires Native VLAN = Default so the switch does not strip the tag. Pi devices have no VLAN subinterface -- they send untagged frames that must land on VLAN 200, which requires Native VLAN = Lab-Pi (VLAN 200).
+
+**Fix:** Create two separate profiles with the settings in the table above and assign them to the correct ports. Do not reuse the same profile for both port types. See Part 2 for the full profile creation steps.

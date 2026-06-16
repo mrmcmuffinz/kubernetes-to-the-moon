@@ -17,9 +17,9 @@ Expected: three nodes in `Ready` state with correct INTERNAL-IPs:
 
 ```
 NAME    STATUS   ROLES           ...   INTERNAL-IP      ...
-pi-cp   Ready    control-plane   ...   192.168.200.10   ...
-pi-w1   Ready    worker          ...   192.168.200.11   ...
-pi-w2   Ready    worker          ...   192.168.200.12   ...
+rpi-node-01   Ready    control-plane   ...   192.168.200.10   ...
+rpi-node-02   Ready    worker          ...   192.168.200.11   ...
+rpi-node-03   Ready    worker          ...   192.168.200.12   ...
 ```
 
 ---
@@ -31,7 +31,7 @@ KUBECONFIG=~/cka-lab/pi-kubeadm/admin.conf kubectl get pods -A
 ```
 
 All pods should be `Running` or `Completed`. Common pods:
-- `kube-system`: kube-apiserver, etcd, kube-controller-manager, kube-scheduler (on pi-cp), kube-proxy (on each node), CoreDNS (two replicas)
+- `kube-system`: kube-apiserver, etcd, kube-controller-manager, kube-scheduler (on rpi-node-01), kube-proxy (on each node), CoreDNS (two replicas)
 - `calico-system`: calico-node (one per node), calico-kube-controllers
 
 ---
@@ -90,7 +90,7 @@ KUBECONFIG=~/cka-lab/pi-kubeadm/admin.conf kubectl rollout status daemonset/veri
 KUBECONFIG=~/cka-lab/pi-kubeadm/admin.conf kubectl get pods -l app=verify-ds -o wide
 ```
 
-Expected: 3 pods, one on each of `pi-cp`, `pi-w1`, `pi-w2`.
+Expected: 3 pods, one on each of `rpi-node-01`, `rpi-node-02`, `rpi-node-03`.
 
 Clean up:
 
@@ -112,7 +112,7 @@ metadata:
   name: net-a
   namespace: default
 spec:
-  nodeName: pi-w1
+  nodeName: rpi-node-02
   containers:
   - name: net
     image: busybox:1.36
@@ -124,7 +124,7 @@ metadata:
   name: net-b
   namespace: default
 spec:
-  nodeName: pi-w2
+  nodeName: rpi-node-03
   containers:
   - name: net
     image: busybox:1.36

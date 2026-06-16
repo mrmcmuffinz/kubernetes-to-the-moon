@@ -1,126 +1,194 @@
-# OS Setup: Ubuntu Server 24.04 ARM64
+# OS Setup: Raspberry Pi OS Trixie Lite (arm64)
 
-**Purpose:** Flash Ubuntu Server 24.04 LTS ARM64 on each Pi, complete first-boot
-configuration, fix the cgroup kernel parameter for kubelet, disable swap, and set the
-hostname. Repeat for all three nodes before proceeding to network setup.
+**Purpose:** Flash Raspberry Pi OS Trixie Lite on each Pi, set the hostname, verify
+cgroup configuration, and disable swap. Repeat for all three nodes before proceeding
+to network setup.
 
 This document runs on each Pi node individually and (for flashing) on the host machine.
 
 ---
 
+## Part 0: Wipe a Previously Used NVMe (skip for new drives)
+
+If the NVMe was used before, clear all partition table and filesystem signatures before
+flashing. Old LVM, RAID, or partition metadata can cause a non-bootable result.
+
+Run these steps on the **host machine** with the NVMe connected via a USB-to-NVMe
+adapter.
+
+```bash
+# 1. Identify the device -- match by size, NOT by name
+lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
+# Do NOT proceed until you are certain of the device name.
+```
+
+```bash
+# 2. Unmount any partitions the OS auto-mounted
+sudo umount /dev/sda* 2>/dev/null || true
+```
+
+```bash
+# 3. Wipe all filesystem and partition table signatures
+sudo wipefs -a /dev/sda
+```
+
+```bash
+# 4. Zero the first 100 MB to remove any residual boot or LVM headers
+sudo dd if=/dev/zero of=/dev/sda bs=1M count=100 status=progress
+sync
+```
+
+```bash
+# 5. Verify the drive is clean
+sudo wipefs /dev/sda
+lsblk /dev/sda
+# Expected: single line for the disk, no child partitions listed
+```
+
+---
+
 ## Part 1: Flash the OS Image
 
-Use **Raspberry Pi Imager** (available for Linux, macOS, Windows from `raspberrypi.com/software`).
+Connect the NVMe via a USB-to-NVMe adapter. Identify the device with `lsblk`, then
+flash with `dd`:
 
-1. Open Raspberry Pi Imager.
-2. **Choose Device:** Raspberry Pi 5.
-3. **Choose OS:** Other general-purpose OS → Ubuntu → Ubuntu Server 24.04 LTS (64-bit).
-4. **Choose Storage:** Select the target SD card or NVMe drive.
-5. Click the settings gear icon (**Edit Settings**) before writing:
-   - Hostname: `pi-cp` (for the control plane) or `pi-w1`, `pi-w2` (for workers)
-   - Enable SSH: checked; use your public key for authentication
-   - Username: `kube`
-   - Password: `kubeadmin` (or whatever you prefer)
-   - Do not configure Wi-Fi (use wired Ethernet only)
-6. Click **Save**, then **Write**.
+```bash
+sudo dd if=<image>.img of=/dev/sda bs=4M status=progress conv=fsync
+sync
+```
 
-Repeat for each Pi with its respective hostname.
+Replace `<image>.img` with the full path to your Raspberry Pi OS Trixie Lite image
+(e.g. `2026-04-21-raspios-trixie-arm64-lite-patched.img`). Replace `/dev/sda` with
+the correct device identified in Part 0.
 
-**NVMe note:** If using NVMe via a PCIe HAT, ensure your Pi 5 firmware supports NVMe boot. Flash the NVMe with Raspberry Pi Imager using a USB-to-NVMe adapter, or boot from SD and copy the OS to NVMe manually. Refer to the official Pi 5 NVMe boot guide.
+`conv=fsync` flushes all data to disk before `dd` exits. Wait for the command to
+complete fully before removing the adapter.
+
+**After flashing, before removing the adapter**, mount the boot partition and patch
+the cloud-init `user-data` to set the keyboard layout to US. The boot partition is
+FAT32 (partition 1) and is writable directly from the host:
+
+```bash
+sudo mkdir -p /mnt/pi-boot
+sudo mount /dev/sda1 /mnt/pi-boot
+
+# Append keyboard config to the existing user-data file
+sudo tee -a /mnt/pi-boot/user-data > /dev/null <<'EOF'
+keyboard:
+  layout: us
+  model: pc105
+EOF
+
+sudo umount /mnt/pi-boot
+```
+
+The `keyboard` cloud-init module writes `/etc/default/keyboard` and runs `setupcon`
+on first boot. This replaces the default `gb` layout with `us`.
+
+Repeat for each Pi with its own NVMe drive.
 
 ---
 
 ## Part 2: First Boot
 
-Insert the flashed media, connect the Pi to power and Ethernet, and wait ~2 minutes for first boot to complete. SSH in using the IP assigned by DHCP (check your router's DHCP leases or use `nmap` to discover it):
+Insert the NVMe into the Pi, connect Ethernet and power, and wait ~60 seconds for first
+boot. The Pi will be accessible via SSH as the `admin` user using the key configured in
+the image.
+
+Find the DHCP-assigned IP from your UCG-Fiber DHCP leases, or scan the network:
 
 ```bash
-# On host — discover Pi IP (adjust subnet to your VLAN 200 range if DHCP is active)
-nmap -sn 192.168.200.0/24 | grep -A 1 "Raspberry"
-
-# Or check DHCP leases in UCG-Fiber UI
+# On host -- scan VLAN 200 subnet (requires Pi to be on the correct switch port first)
+nmap -sn 192.168.200.0/24 | grep -B 1 "Raspberry"
 ```
 
-Once you find the IP, SSH in:
+SSH in:
 
 ```bash
-ssh kube@<dhcp-ip>
-```
-
-The hostname should match what you set in Imager. If it does not, set it manually:
-
-```bash
-sudo hostnamectl set-hostname pi-cp   # or pi-w1, pi-w2
+ssh admin@<dhcp-ip>
 ```
 
 ---
 
-## Part 3: Fix Cgroup Parameters
+## Part 3: Set Hostname
 
-Ubuntu Server 24.04 on Raspberry Pi 5 may not have memory cgroup accounting enabled by
-default. `kubeadm preflight` checks for this and will fail if cgroups are not set up
-correctly. Add the required flags to the kernel command line.
+Set the hostname for each node. This becomes the Kubernetes node name and must be
+unique across the cluster.
 
-```bash
-# Check if cgroup memory is already enabled
-grep cgroup /proc/cgroups | grep memory
-# Expected: memory   0   1   1   (the third column must be 1)
-```
-
-If the third column is 0, or if `cgroup_memory` is not shown, add the flags:
+| Node | Hostname | IP |
+|------|----------|----|
+| Control plane | `rpi-node-01` | `192.168.200.10` |
+| Worker 1 | `rpi-node-02` | `192.168.200.11` |
+| Worker 2 | `rpi-node-03` | `192.168.200.12` |
 
 ```bash
-# The cmdline.txt file is in the boot partition
-sudo grep "cgroup" /boot/firmware/cmdline.txt
-```
+# Substitute the correct hostname for this node
+sudo hostnamectl set-hostname rpi-node-01
 
-If `cgroup_enable=memory` and `cgroup_memory=1` are not present, append them to the end
-of the single line in `cmdline.txt`:
-
-```bash
-# Read the current line
-cat /boot/firmware/cmdline.txt
-
-# Append cgroup flags (add to end of existing line, not a new line)
-sudo sed -i 's/$/ cgroup_enable=memory cgroup_memory=1/' /boot/firmware/cmdline.txt
-
-# Verify: must remain a single line with the flags appended
-cat /boot/firmware/cmdline.txt
-```
-
-The file must remain a single line -- multiple lines in `cmdline.txt` causes boot failures.
-
----
-
-## Part 4: Disable Swap
-
-Kubernetes requires swap to be disabled on all nodes.
-
-```bash
-# Check for active swap
-swapon --show
-
-# Disable immediately
-sudo swapoff -a
-
-# Prevent re-enable at boot: comment out any swap entries in fstab
-sudo sed -i '/swap/s/^/#/' /etc/fstab
+# Add the hostname to /etc/hosts for local resolution
+# (sudo resolves the hostname and logs a warning if it is not resolvable locally)
+echo "127.0.1.1 $(hostname)" | sudo tee -a /etc/hosts
 
 # Verify
+hostname
+# Expected: rpi-node-01
+
+grep "$(hostname)" /etc/hosts
+# Expected: 127.0.1.1  rpi-node-01
+```
+
+---
+
+## Part 4: Fix Cgroup Parameters
+
+Kubernetes requires memory cgroup accounting. On Raspberry Pi OS Trixie with a Pi 5,
+this is typically enabled by default, but verify before proceeding.
+
+```bash
+grep memory /proc/cgroups
+# Expected: memory   0   N   1  (the fourth column must be 1)
+```
+
+If the fourth column is 0, add the flags to the kernel command line:
+
+```bash
+# Check current cmdline
+cat /boot/firmware/cmdline.txt
+
+# Append cgroup flags if not present (must remain a single line)
+sudo sed -i 's/$/ cgroup_enable=memory cgroup_memory=1/' /boot/firmware/cmdline.txt
+
+# Verify -- must be a single line
+cat /boot/firmware/cmdline.txt
+```
+
+---
+
+## Part 5: Verify Swap is Disabled
+
+Kubernetes requires swap to be disabled on all nodes. The patched image's cloud-init
+disables the zram swap service (`systemd-zram-setup@zram0`) automatically on first
+boot. Verify it took effect:
+
+```bash
 swapon --show
 # Expected: no output
 ```
 
-On Ubuntu Server 24.04, swap is typically configured via a swap file. Check:
+If swap is still active (output shows `/dev/zram0`), disable it manually:
 
 ```bash
-cat /etc/fstab | grep swap
-# If a swap entry exists and is not commented out, the sed command above fixed it
+sudo systemctl disable --now systemd-zram-setup@zram0.service
+swapon --show
+# Expected: no output
 ```
+
+Note: `swapoff -a` does not work on zram devices and will log `Invalid argument` --
+use the systemd service approach above instead.
 
 ---
 
-## Part 5: Reboot and Verify
+## Part 6: Reboot and Verify
 
 ```bash
 sudo reboot
@@ -129,15 +197,15 @@ sudo reboot
 After reboot, SSH back in:
 
 ```bash
-ssh kube@<dhcp-ip>
+ssh admin@<dhcp-ip>
 
 # Verify hostname
 hostname
-# Expected: pi-cp (or pi-w1, pi-w2)
+# Expected: rpi-node-01 (or rpi-node-02, rpi-node-03)
 
 # Verify cgroup memory is enabled
 grep memory /proc/cgroups
-# Expected: memory   0   N   1  (third column = 1)
+# Expected: memory   0   N   1  (fourth column = 1)
 
 # Verify swap is off
 swapon --show
@@ -146,7 +214,8 @@ swapon --show
 
 ---
 
-Repeat Parts 1-5 for all three Pi nodes (`pi-cp`, `pi-w1`, `pi-w2`) before proceeding.
+Repeat Parts 1-6 for all three Pi nodes (`rpi-node-01`, `rpi-node-02`, `rpi-node-03`)
+before proceeding.
 
 ---
 

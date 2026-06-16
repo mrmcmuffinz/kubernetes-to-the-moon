@@ -20,57 +20,40 @@ all three nodes.
 
 ---
 
-## Part 1: Static IP via Netplan
+## Part 1: Static IP via nmcli
 
-Ubuntu 24.04 uses Netplan for network configuration. The Pi's wired interface is
-typically `eth0` but may differ (check with `ip -brief link show`).
-
-Run the following on each Pi, substituting the correct hostname and IP:
-
-**On `pi-cp`** (`192.168.200.10`):
+Raspberry Pi OS Trixie uses NetworkManager. The wired interface is `eth0`. Run the
+following on each Pi, substituting the correct IP for that node.
 
 ```bash
-sudo tee /etc/netplan/10-static.yaml > /dev/null <<'EOF'
-network:
-  version: 2
-  renderer: networkd
-  ethernets:
-    eth0:
-      dhcp4: false
-      addresses:
-        - 192.168.200.10/24
-      routes:
-        - to: default
-          via: 192.168.200.1
-      nameservers:
-        addresses:
-          - 192.168.200.1
-          - 8.8.8.8
-EOF
-sudo chmod 600 /etc/netplan/10-static.yaml
+# Find the active connection name
+nmcli connection show
+# Look for the connection on eth0 (e.g. "Wired connection 1" or "eth0")
 ```
 
-**On `pi-w1`** (`192.168.200.11`): Same file, change address to `192.168.200.11/24`.
+Set the static IP (substitute `<CONNECTION>` with the name shown above and `<IP>` with
+the node's address):
 
-**On `pi-w2`** (`192.168.200.12`): Same file, change address to `192.168.200.12/24`.
-
-For all three nodes, also remove or disable any existing cloud-init-generated Netplan
-files that have DHCP configured:
+| Node | IP |
+|------|----|
+| `rpi-node-01` | `192.168.200.10` |
+| `rpi-node-02` | `192.168.200.11` |
+| `rpi-node-03` | `192.168.200.12` |
 
 ```bash
-# Check what's there
-ls /etc/netplan/
+sudo nmcli connection modify "<CONNECTION>" \
+  ipv4.method manual \
+  ipv4.addresses "<IP>/24" \
+  ipv4.gateway "192.168.200.1" \
+  ipv4.dns "192.168.200.1,8.8.8.8" \
+  connection.autoconnect yes
 
-# If there is a 50-cloud-init.yaml or similar with dhcp4: true, disable it
-sudo mv /etc/netplan/50-cloud-init.yaml /etc/netplan/50-cloud-init.yaml.disabled 2>/dev/null || true
+sudo nmcli connection up "<CONNECTION>"
 ```
 
-Apply the new config:
+Verify:
 
 ```bash
-sudo netplan apply
-
-# Verify
 ip addr show eth0 | grep '192.168.200'
 # Expected: inet 192.168.200.10/24 (or .11/.12 per node)
 
@@ -89,71 +72,71 @@ three nodes with the static IPs. Run this block on each Pi:
 sudo tee -a /etc/hosts > /dev/null <<'EOF'
 
 # Kubernetes cluster nodes
-192.168.200.10  pi-cp
-192.168.200.11  pi-w1
-192.168.200.12  pi-w2
+192.168.200.10  rpi-node-01
+192.168.200.11  rpi-node-02
+192.168.200.12  rpi-node-03
 EOF
 
 # Verify
-cat /etc/hosts | grep pi-
+cat /etc/hosts | grep rpi-node
 ```
 
 ---
 
 ## Part 3: SSH Key Distribution
 
-The control plane (`pi-cp`) needs to be accessible from the host machine without
-password prompts for cluster management. Add the host's public key to each Pi (if you
-used Raspberry Pi Imager's SSH settings in document 01, this is already done). Verify:
+The control plane (`rpi-node-01`) needs to be accessible from the host machine without
+password prompts for cluster management. The SSH key is pre-configured in the image.
+Verify connectivity to each node:
 
 ```bash
 # From the host
-ssh kube@192.168.200.10 hostname
-# Expected: pi-cp
+ssh admin@192.168.200.10 hostname
+# Expected: rpi-node-01
 
-ssh kube@192.168.200.11 hostname
-# Expected: pi-w1
+ssh admin@192.168.200.11 hostname
+# Expected: rpi-node-02
 
-ssh kube@192.168.200.12 hostname
-# Expected: pi-w2
+ssh admin@192.168.200.12 hostname
+# Expected: rpi-node-03
 ```
 
 Add the following to `~/.ssh/config` on the host for short-form SSH access:
 
 ```ssh-config
-Host pi-cp
+Host rpi-node-01
     HostName 192.168.200.10
-    User kube
+    User admin
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new
 
-Host pi-w1
+Host rpi-node-02
     HostName 192.168.200.11
-    User kube
+    User admin
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new
 
-Host pi-w2
+Host rpi-node-03
     HostName 192.168.200.12
-    User kube
+    User admin
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new
 ```
 
-After adding this, `ssh pi-cp` resolves without flags.
+After adding this, `ssh rpi-node-01` resolves without flags.
 
 ---
 
 ## Part 4: Inter-Node Connectivity
 
-From `pi-cp`, verify it can reach both workers:
+From `rpi-node-01`, verify it can reach both workers:
 
 ```bash
-ssh pi-cp  # SSH into control plane
+ssh rpi-node-01  # SSH into control plane
 
 # Ping both workers
-ping -c 2 pi-w1
-ping -c 2 pi-w2
+ping -c 2 rpi-node-02
+ping -c 2 rpi-node-03
 
 # Verify internet access
 ping -c 2 8.8.8.8

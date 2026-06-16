@@ -4,7 +4,7 @@
 kubeadm/kubelet/kubectl toolchain on all three nodes. All packages use the `arm64`
 architecture, which is the same `pkgs.k8s.io` apt source as the x86-64 guides.
 
-Run this document on all three nodes (`pi-cp`, `pi-w1`, `pi-w2`). Steps are identical
+Run this document on all three nodes (`rpi-node-01`, `rpi-node-02`, `rpi-node-03`). Steps are identical
 on all three.
 
 ---
@@ -42,8 +42,8 @@ sysctl net.ipv4.ip_forward
 
 ## Part 2: containerd and runc
 
-Install containerd and runc from Ubuntu 24.04 apt (ARM64 packages are available in the
-standard Ubuntu repository).
+Install containerd and runc from the Debian Trixie apt repository (ARM64 packages are
+available in the standard repository).
 
 ```bash
 sudo apt update

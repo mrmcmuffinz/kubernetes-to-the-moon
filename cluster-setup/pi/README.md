@@ -13,9 +13,9 @@ Parts 1 and 2.
 
 | Node | Hostname | IP | Role |
 |------|----------|----|------|
-| Pi 1 | `pi-cp` | `192.168.200.10` | Control plane |
-| Pi 2 | `pi-w1` | `192.168.200.11` | Worker |
-| Pi 3 | `pi-w2` | `192.168.200.12` | Worker |
+| Pi 1 | `rpi-node-01` | `192.168.200.10` | Control plane |
+| Pi 2 | `rpi-node-02` | `192.168.200.11` | Worker |
+| Pi 3 | `rpi-node-03` | `192.168.200.12` | Worker |
 | UCG-Fiber | — | `192.168.200.1` | Gateway |
 
 ---
@@ -27,11 +27,11 @@ Follow these in order.
 | # | Document | What It Does | Time |
 |---|----------|-------------|------|
 | 00 | [Overview](00-overview.md) | Hardware list, component versions, time estimate | — |
-| 01 | [OS Setup](01-os-setup.md) | Flash Ubuntu Server 24.04 ARM64, set hostname, fix cgroups, disable swap | 20-30 min per node |
-| 02 | [Network Setup](02-network-setup.md) | Static IP via Netplan (VLAN 200), /etc/hosts, SSH connectivity | 10 min per node |
+| 01 | [OS Setup](01-os-setup.md) | Flash Raspberry Pi OS Trixie Lite with `dd`, set hostname, fix cgroups, disable swap | 20-30 min per node |
+| 02 | [Network Setup](02-network-setup.md) | Static IP via nmcli (VLAN 200), /etc/hosts, SSH connectivity | 10 min per node |
 | 03 | [Node Prerequisites](03-node-prerequisites.md) | containerd, runc, CNI plugins, crictl, kubeadm, kubelet, kubectl (ARM64) | 15-20 min all nodes |
-| 04 | [Control Plane Init](04-control-plane-init.md) | `kubeadm init` on `pi-cp`, set up kubectl, copy kubeconfig to host | 10-15 min |
-| 05 | [Worker Join](05-worker-join.md) | `kubeadm join` on `pi-w1` and `pi-w2`, verify all nodes Ready | 10 min |
+| 04 | [Control Plane Init](04-control-plane-init.md) | `kubeadm init` on `rpi-node-01`, set up kubectl, copy kubeconfig to host | 10-15 min |
+| 05 | [Worker Join](05-worker-join.md) | `kubeadm join` on `rpi-node-02` and `rpi-node-03`, verify all nodes Ready | 10 min |
 | 06 | [Verify](06-verify.md) | DNS, pod scheduling across all nodes, cross-node connectivity | 5-10 min |
 
 **Total time:** ~90 minutes (first pass; subsequent reprovisioning is faster once packages are cached locally).
@@ -42,9 +42,9 @@ Follow these in order.
 
 | Component | Version |
 |-----------|---------|
-| Ubuntu Server | 24.04 LTS (ARM64 Raspberry Pi) |
+| Raspberry Pi OS | Trixie Lite (arm64) |
 | Kubernetes | v1.35.3 |
-| containerd | Ubuntu 24.04 apt |
+| containerd | Debian Trixie apt |
 | runc | Ubuntu 24.04 apt |
 | cri-tools (crictl) | v1.35.0 |
 | CNI plugins | v1.7.1 |
