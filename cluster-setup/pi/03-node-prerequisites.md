@@ -4,9 +4,10 @@
 kubeadm/kubelet/kubectl toolchain on all three nodes. All packages use the `arm64`
 architecture, which is the same `pkgs.k8s.io` apt source as the x86-64 guides.
 
-Cloud-init already handled kernel modules, sysctl, and prerequisite package installation
-(`apt-transport-https`, `ca-certificates`, `curl`, `gnupg`, etc.) during first boot.
-This document covers only the container runtime and Kubernetes toolchain.
+The base image ships with prerequisite packages pre-installed (`apt-transport-https`,
+`ca-certificates`, `curl`, `gnupg`, etc.). Cloud-init handled kernel modules and sysctl
+via `write_files` during first boot. This document covers only the container runtime
+and Kubernetes toolchain.
 
 Run on all three nodes (`rpi-node-01`, `rpi-node-02`, `rpi-node-03`). Steps are
 identical on all three.
@@ -82,7 +83,7 @@ crictl --version
 
 Add the Kubernetes apt repository and install the toolchain. The package source is
 identical to the x86-64 guides but targets `arm64`. `apt-transport-https`,
-`ca-certificates`, `curl`, and `gpg` are pre-installed by cloud-init.
+`ca-certificates`, `curl`, and `gpg` are pre-installed in the base image.
 
 ```bash
 # Add the Kubernetes apt signing key

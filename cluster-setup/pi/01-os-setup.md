@@ -125,13 +125,8 @@ users:
       - <YOUR_SSH_PUBLIC_KEY>
 
 runcmd:
-  # Remove fake-hwclock (Trixie bug: rewinds clock and defeats apt signature verification)
-  - apt-get remove -y fake-hwclock || true
-  - rm -f /etc/fake-hwclock.data
-
-  # Force NTP sync before any apt operations
+  # Force NTP sync before any apt operations (clock must be correct for signature verification)
   - timedatectl set-ntp true
-  - systemctl restart systemd-timesyncd
   - |
     for i in $(seq 1 30); do
       if timedatectl show -p NTPSynchronized --value | grep -q yes; then
@@ -142,14 +137,9 @@ runcmd:
     done
   - timedatectl status
 
-  # Package work (safe now that clock is synced)
+  # Upgrade any packages updated since the image was built
   - apt-get update
   - DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-  - |
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-      apt-transport-https bash-completion bridge-utils ca-certificates \
-      chrony conntrack curl gnupg ipset iptables-persistent jq \
-      lsb-release net-tools socat vim
 
   # Enable services
   - systemctl enable --now chrony
