@@ -1,72 +1,43 @@
-# Network Setup: Static IPs on VLAN 200
+# Network Setup: Verify and Complete Cluster Networking
 
-**Purpose:** Assign a static IP to each Pi node in VLAN 200 (`192.168.200.0/24`),
-populate `/etc/hosts` for cluster name resolution, and verify SSH connectivity between
-all nodes and from the host.
+**Purpose:** Verify the static IP and hostname set by cloud-init, add cluster node
+entries to `/etc/hosts` on each node, and confirm SSH and inter-node connectivity.
 
-This document runs on each Pi node individually. Run it after document 01 (OS Setup) on
-all three nodes.
+Run this document on each Pi node after completing document 01 (OS Setup) on all three.
 
 ---
 
-## Prerequisites
+## Part 1: Verify Static IP and Hostname
 
-- VLAN 200 is configured on UCG-Fiber and the US-24 switch (per
-  [`../vm/00-vlan-host-network-setup.md`](../vm/00-vlan-host-network-setup.md) Parts 1
-  and 2 -- the UCG-Fiber "Lab-Pi" network and the `Lab-Pi-Access` port profile on
-  Pi-facing ports).
-- Each Pi is connected via Ethernet to a VLAN 200 access port on the US-24.
-- You can SSH into each Pi using its DHCP-assigned IP (from document 01).
-
----
-
-## Part 1: Static IP via nmcli
-
-Raspberry Pi OS Trixie uses NetworkManager. The wired interface is `eth0`. Run the
-following on each Pi, substituting the correct IP for that node.
+Cloud-init wrote `network-config` and set the hostname. Confirm both are in effect:
 
 ```bash
-# Find the active connection name
-nmcli connection show
-# Look for the connection on eth0 (e.g. "Wired connection 1" or "eth0")
-```
-
-Set the static IP (substitute `<CONNECTION>` with the name shown above and `<IP>` with
-the node's address):
-
-| Node | IP |
-|------|----|
-| `rpi-node-01` | `192.168.200.10` |
-| `rpi-node-02` | `192.168.200.11` |
-| `rpi-node-03` | `192.168.200.12` |
-
-```bash
-sudo nmcli connection modify "<CONNECTION>" \
-  ipv4.method manual \
-  ipv4.addresses "<IP>/24" \
-  ipv4.gateway "192.168.200.1" \
-  ipv4.dns "192.168.200.1,8.8.8.8" \
-  connection.autoconnect yes
-
-sudo nmcli connection up "<CONNECTION>"
-```
-
-Verify:
-
-```bash
+# Static IP on eth0
 ip addr show eth0 | grep '192.168.200'
-# Expected: inet 192.168.200.10/24 (or .11/.12 per node)
+# Expected: inet 192.168.200.10/24  (or .11/.12 per node)
 
+# Default route
 ip route show default
 # Expected: default via 192.168.200.1 dev eth0
+
+# Hostname
+hostname
+# Expected: rpi-node-01  (or rpi-node-02/03 per node)
+
+# Internet connectivity
+ping -c 2 1.1.1.1
 ```
+
+If the IP or hostname is wrong, check the cloud-init files on the boot partition and
+re-run cloud-init (see `../vm/cloud-init-reference.md`).
 
 ---
 
-## Part 2: DNS and Hostname Resolution
+## Part 2: Add Cluster Node /etc/hosts Entries
 
-Kubernetes components need to resolve cluster hostnames. Populate `/etc/hosts` on all
-three nodes with the static IPs. Run this block on each Pi:
+`manage_etc_hosts: true` in cloud-init writes the `127.0.1.1` loopback entry for the
+local hostname, but it does not add the other cluster nodes. Add them manually on
+each Pi so Kubernetes components can resolve peer hostnames:
 
 ```bash
 sudo tee -a /etc/hosts > /dev/null <<'EOF'
@@ -78,30 +49,33 @@ sudo tee -a /etc/hosts > /dev/null <<'EOF'
 EOF
 
 # Verify
-cat /etc/hosts | grep rpi-node
+grep rpi-node /etc/hosts
+```
+
+Expected output includes both the loopback entry (from cloud-init) and the three
+cluster entries:
+
+```
+127.0.1.1       rpi-node-01
+192.168.200.10  rpi-node-01
+192.168.200.11  rpi-node-02
+192.168.200.12  rpi-node-03
 ```
 
 ---
 
-## Part 3: SSH Key Distribution
+## Part 3: SSH Connectivity from Host
 
-The control plane (`rpi-node-01`) needs to be accessible from the host machine without
-password prompts for cluster management. The SSH key is pre-configured in the image.
-Verify connectivity to each node:
+The `admin` SSH key was configured by cloud-init. Verify each node is reachable from
+the host:
 
 ```bash
-# From the host
-ssh admin@192.168.200.10 hostname
-# Expected: rpi-node-01
-
-ssh admin@192.168.200.11 hostname
-# Expected: rpi-node-02
-
-ssh admin@192.168.200.12 hostname
-# Expected: rpi-node-03
+ssh admin@192.168.200.10 hostname   # Expected: rpi-node-01
+ssh admin@192.168.200.11 hostname   # Expected: rpi-node-02
+ssh admin@192.168.200.12 hostname   # Expected: rpi-node-03
 ```
 
-Add the following to `~/.ssh/config` on the host for short-form SSH access:
+Add short-form aliases to `~/.ssh/config` on the host:
 
 ```ssh-config
 Host rpi-node-01
@@ -129,26 +103,23 @@ After adding this, `ssh rpi-node-01` resolves without flags.
 
 ## Part 4: Inter-Node Connectivity
 
-From `rpi-node-01`, verify it can reach both workers:
+From the control plane node, verify it can reach both workers and the internet:
 
 ```bash
-ssh rpi-node-01  # SSH into control plane
+ssh rpi-node-01
 
-# Ping both workers
 ping -c 2 rpi-node-02
 ping -c 2 rpi-node-03
-
-# Verify internet access
-ping -c 2 8.8.8.8
+ping -c 2 1.1.1.1
 ```
 
-All three pings should succeed. Internet access confirms the UCG-Fiber is routing VLAN
-200 traffic correctly.
+All three should succeed. Internet access confirms UCG-Fiber is routing VLAN 200
+traffic correctly.
 
 ---
 
-**Result:** All three Pi nodes have static IPs on `192.168.200.0/24`, resolve each
-other by hostname, and are SSH-reachable from the host.
+**Result:** All three Pi nodes have verified static IPs, resolve each other by hostname,
+and are SSH-reachable from the host and from each other.
 
 ---
 

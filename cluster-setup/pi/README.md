@@ -27,9 +27,9 @@ Follow these in order.
 | # | Document | What It Does | Time |
 |---|----------|-------------|------|
 | 00 | [Overview](00-overview.md) | Hardware list, component versions, time estimate | — |
-| 01 | [OS Setup](01-os-setup.md) | Flash Raspberry Pi OS Trixie Lite with `dd`, set hostname, fix cgroups, disable swap | 20-30 min per node |
-| 02 | [Network Setup](02-network-setup.md) | Static IP via nmcli (VLAN 200), /etc/hosts, SSH connectivity | 10 min per node |
-| 03 | [Node Prerequisites](03-node-prerequisites.md) | containerd, runc, CNI plugins, crictl, kubeadm, kubelet, kubectl (ARM64) | 15-20 min all nodes |
+| 01 | [OS Setup](01-os-setup.md) | Flash with `dd`, write per-node cloud-init files (hostname, static IP, user, keyboard, kernel modules, swap disable) | 5-10 min per node (plus 3-5 min unattended first boot) |
+| 02 | [Network Setup](02-network-setup.md) | Verify cloud-init results, add cluster /etc/hosts entries, confirm SSH and inter-node connectivity | 5 min per node |
+| 03 | [Node Prerequisites](03-node-prerequisites.md) | containerd, runc, CNI plugins, crictl, kubeadm, kubelet, kubectl (ARM64) | 10-15 min all nodes |
 | 04 | [Control Plane Init](04-control-plane-init.md) | `kubeadm init` on `rpi-node-01`, set up kubectl, copy kubeconfig to host | 10-15 min |
 | 05 | [Worker Join](05-worker-join.md) | `kubeadm join` on `rpi-node-02` and `rpi-node-03`, verify all nodes Ready | 10 min |
 | 06 | [Verify](06-verify.md) | DNS, pod scheduling across all nodes, cross-node connectivity | 5-10 min |

@@ -66,7 +66,7 @@ Internal Kubernetes ranges (same as all other kubeadm guides):
 |--------|------------|---------|
 | Architecture | x86_64 | ARM64 |
 | OS delivery | QEMU cloud image + cloud-init | Flashed with `dd` from pre-configured image |
-| Cloud-init | Used for VM network and user setup | Used in patched image for keyboard layout and swap disable; not used after first boot |
+| Cloud-init | Used for VM network and user setup | Used extensively: hostname, static IP, user creation, keyboard, kernel modules, sysctl, package prereqs, swap disable, auto-reboot |
 | Cgroup config | Not required (cloud image defaults work) | Required: `cmdline.txt` must include `cgroup_enable=memory cgroup_memory=1` |
 | Package arch | `amd64` | `arm64` |
 | Bridge on host | `br-vm` at `192.168.100.2` | Not needed; Pis connect directly to switch |

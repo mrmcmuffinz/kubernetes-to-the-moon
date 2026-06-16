@@ -4,43 +4,16 @@
 kubeadm/kubelet/kubectl toolchain on all three nodes. All packages use the `arm64`
 architecture, which is the same `pkgs.k8s.io` apt source as the x86-64 guides.
 
-Run this document on all three nodes (`rpi-node-01`, `rpi-node-02`, `rpi-node-03`). Steps are identical
-on all three.
+Cloud-init already handled kernel modules, sysctl, and prerequisite package installation
+(`apt-transport-https`, `ca-certificates`, `curl`, `gnupg`, etc.) during first boot.
+This document covers only the container runtime and Kubernetes toolchain.
+
+Run on all three nodes (`rpi-node-01`, `rpi-node-02`, `rpi-node-03`). Steps are
+identical on all three.
 
 ---
 
-## Part 1: Kernel Modules and Sysctl
-
-These are required for container networking (overlay filesystem and iptables bridging).
-
-```bash
-# Load modules now
-sudo modprobe overlay
-sudo modprobe br_netfilter
-
-# Persist across reboots
-sudo tee /etc/modules-load.d/k8s.conf > /dev/null <<'EOF'
-overlay
-br_netfilter
-EOF
-
-# Set sysctl params
-sudo tee /etc/sysctl.d/k8s.conf > /dev/null <<'EOF'
-net.bridge.bridge-nf-call-iptables  = 1
-net.bridge.bridge-nf-call-ip6tables = 1
-net.ipv4.ip_forward                 = 1
-EOF
-
-sudo sysctl --system
-
-# Verify
-sysctl net.ipv4.ip_forward
-# Expected: net.ipv4.ip_forward = 1
-```
-
----
-
-## Part 2: containerd and runc
+## Part 1: containerd and runc
 
 Install containerd and runc from the Debian Trixie apt repository (ARM64 packages are
 available in the standard repository).
@@ -68,7 +41,7 @@ sudo systemctl is-active containerd
 
 ---
 
-## Part 3: CNI Plugins
+## Part 2: CNI Plugins
 
 ```bash
 CNI_VERSION="v1.7.1"
@@ -83,7 +56,7 @@ ls /opt/cni/bin/
 
 ---
 
-## Part 4: crictl
+## Part 3: crictl
 
 ```bash
 CRICTL_VERSION="v1.35.0"
@@ -105,15 +78,13 @@ crictl --version
 
 ---
 
-## Part 5: kubeadm, kubelet, kubectl (ARM64)
+## Part 4: kubeadm, kubelet, kubectl (ARM64)
 
 Add the Kubernetes apt repository and install the toolchain. The package source is
-identical to the x86-64 guides but targets `arm64`.
+identical to the x86-64 guides but targets `arm64`. `apt-transport-https`,
+`ca-certificates`, `curl`, and `gpg` are pre-installed by cloud-init.
 
 ```bash
-# Install apt prerequisites
-sudo apt install -y apt-transport-https ca-certificates curl gpg
-
 # Add the Kubernetes apt signing key
 sudo mkdir -p /etc/apt/keyrings
 curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.35/deb/Release.key \
@@ -166,7 +137,8 @@ sudo crictl ps
 ```
 
 **Result:** All three nodes have containerd, crictl, CNI plugins, and the
-kubeadm/kubelet/kubectl toolchain installed at v1.35.3.
+kubeadm/kubelet/kubectl toolchain installed. Kernel modules, sysctl, and prerequisite
+packages were handled by cloud-init during first boot.
 
 ---
 
