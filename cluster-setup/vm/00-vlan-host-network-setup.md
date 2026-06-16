@@ -314,6 +314,81 @@ The host is now ready for VM creation. Proceed to the VM provisioning document f
 
 ---
 
+## Part 4: QEMU Host -- VLAN 200 Subinterface for Pi Access
+
+These steps add `192.168.200.2/24` to the host so it can SSH into the Pi nodes and manage the kubeadm cluster directly. No bridge is needed -- the Pis are physical devices on access ports, not VMs that need L2 attachment.
+
+### Why a dedicated NIC
+
+The existing trunk NIC (`enp6s0f3`) carries VLAN 100 and its switch port profile has network isolation enabled, which prevents adding VLAN 200 as an additional tagged VLAN on the same port. The solution is to dedicate a second NIC (`enp6s0f0` on the same quad-port card) to VLAN 200 on a separate switch port.
+
+### Step 1: Create a Lab-Pi-Trunk Port Profile on the US-24
+
+1. Devices → US-24 → Port Manager
+2. Create profile **"Lab-Pi-Trunk"**:
+   - Native VLAN: `Default`
+   - Tagged VLAN Management: `Custom`
+   - Tagged VLANs: `Lab-Pi` (VLAN 200)
+3. Assign this profile to the switch port connected to `enp6s0f0` on the host.
+
+This mirrors the Lab-VM-Trunk profile but carries VLAN 200 instead of VLAN 100.
+
+### Step 2: Add VLAN 200 Subinterface to Netplan
+
+In your existing Netplan file, `enp6s0f0` is already declared as a bare ethernet interface. Keep it that way -- do not add an IP to the physical NIC. Add a `vlans:` entry for `enp6s0f0.200`:
+
+```yaml
+  vlans:
+    enp6s0f0.200:
+      id: 200
+      link: enp6s0f0
+      dhcp4: false
+      dhcp6: false
+      link-local: []
+      accept-ra: false
+      addresses:
+        - 192.168.200.2/24
+```
+
+The `enp6s0f0` ethernet block should remain unchanged (NM passthrough with both `ipv4.method` and `ipv6.method` disabled):
+
+```yaml
+  ethernets:
+    enp6s0f0:
+      dhcp4: false
+      dhcp6: false
+      link-local: []
+      accept-ra: false
+      optional: true
+      networkmanager:
+        passthrough:
+          ipv4.method: "disabled"
+          ipv6.method: "disabled"
+```
+
+Notes:
+- VLAN 200 has no DHCP server -- the static address is required.
+- No default route on `enp6s0f0.200`. The host's default route stays on `eno1`.
+- `192.168.200.2` follows the same convention as `192.168.100.2` on `br-vm`.
+
+### Step 3: Apply and Verify
+
+```bash
+sudo netplan apply
+
+# Verify the subinterface came up with the correct IP
+ip addr show enp6s0f0.200
+# Expected: enp6s0f0.200@enp6s0f0: <...> state UP
+#           inet 192.168.200.2/24
+
+# Verify reachability once Pi nodes are up
+ping -c 2 192.168.200.10   # pi-cp
+ping -c 2 192.168.200.11   # pi-w1
+ping -c 2 192.168.200.12   # pi-w2
+```
+
+---
+
 ## Routing and Internet Access
 
 The UCG-Fiber routes traffic for both lab VLANs. VMs set `192.168.100.1` (or `192.168.200.1` for Pi nodes) as their default gateway in their network config. Internet traffic flows VM → br-vm (L2) → VLAN 100 trunk → US-24 → UCG-Fiber → WAN. The host does not perform NAT.

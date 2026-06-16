@@ -158,6 +158,12 @@ The `admin.conf` already references `192.168.100.10:6443` because of `controlPla
 
 All four control plane components run as static pods in the `kube-system` namespace, defined by manifests in `/etc/kubernetes/manifests/`. kubelet watches that directory and creates a pod for each file.
 
+`etcdctl` is not included in the Kubernetes apt repo. Install it from the Ubuntu package on `controlplane-1` before running the etcd health check below:
+
+```bash
+sudo apt-get install -y etcd-client
+```
+
 ```bash
 # Static pod manifests (on controlplane-1)
 sudo ls -la /etc/kubernetes/manifests/
