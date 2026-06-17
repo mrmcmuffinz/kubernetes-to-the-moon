@@ -31,7 +31,7 @@ Calico's recommended install path is via the Tigera operator. The operator runs 
 ```bash
 ssh controlplane-1
 
-kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.0/manifests/tigera-operator.yaml
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.5/manifests/tigera-operator.yaml
 
 # Wait for the operator
 kubectl -n tigera-operator wait --for=condition=Available deployment/tigera-operator --timeout=120s
