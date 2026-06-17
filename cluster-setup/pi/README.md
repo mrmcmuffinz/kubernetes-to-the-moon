@@ -43,12 +43,12 @@ Follow these in order.
 | Component | Version |
 |-----------|---------|
 | Raspberry Pi OS | Trixie Lite (arm64) |
-| Kubernetes | v1.35.3 |
-| containerd | Debian Trixie apt |
-| runc | Ubuntu 24.04 apt |
+| Kubernetes | v1.35.6 |
+| containerd | 1.7.24 (Debian Trixie apt) |
+| runc | Debian Trixie apt |
 | cri-tools (crictl) | v1.35.0 |
-| CNI plugins | v1.7.1 |
-| Calico | v3.31.0 (Tigera operator) |
+| CNI plugins | Bundled with Calico |
+| Calico | v3.31.5 (Tigera operator) |
 
 Kubernetes v1.35 is the version the CKA exam currently targets.
 

@@ -10,7 +10,17 @@ Run the join command on each worker node separately.
 ## Prerequisites
 
 - Document 04 is complete and `rpi-node-01` is in `Ready` state.
-- Document 03 prerequisites are complete on `rpi-node-02` and `rpi-node-03`.
+- Document 03 prerequisites are complete on `rpi-node-02` and `rpi-node-03`, including the
+  containerd `bin_dir` and `sandbox_image` overrides. Without them a worker joins fine but
+  every pod scheduled to it fails with `failed to find plugin "calico" in path [/usr/lib/cni]`,
+  because `calico-node` is host-networked and starts regardless. Confirm on each worker
+  before joining:
+
+```bash
+# On rpi-node-02 and rpi-node-03
+sudo grep -E 'bin_dir|sandbox_image' /etc/containerd/config.toml
+# Expected: bin_dir = "/opt/cni/bin"  and  sandbox_image = "registry.k8s.io/pause:3.10.1"
+```
 
 Quick check from the host:
 

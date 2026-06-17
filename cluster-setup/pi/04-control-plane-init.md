@@ -30,31 +30,67 @@ swapon --show
 
 ## Part 1: kubeadm init
 
-Use a YAML config file to set the key parameters explicitly. The `controlPlaneEndpoint`
-is the static IP of `rpi-node-01` (no HAProxy needed for a single control plane).
+Use a YAML config file to set the key parameters explicitly. This uses the `v1beta4`
+kubeadm API (the current version for Kubernetes v1.35; `v1beta3` is removed in v1.36). The
+`controlPlaneEndpoint` is the static IP of `rpi-node-01` (no HAProxy needed for a single
+control plane).
 
 ```bash
 sudo tee /tmp/kubeadm-config.yaml > /dev/null <<'EOF'
-apiVersion: kubeadm.k8s.io/v1beta3
-kind: ClusterConfiguration
-kubernetesVersion: "v1.35.3"
-controlPlaneEndpoint: "192.168.200.10:6443"
-networking:
-  podSubnet: "10.244.0.0/16"
-  serviceSubnet: "10.96.0.0/16"
----
-apiVersion: kubeadm.k8s.io/v1beta3
+apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration
 localAPIEndpoint:
-  advertiseAddress: "192.168.200.10"
+  advertiseAddress: 192.168.200.10
   bindPort: 6443
 nodeRegistration:
+  name: rpi-node-01
+  criSocket: unix:///run/containerd/containerd.sock
   kubeletExtraArgs:
-    node-ip: "192.168.200.10"
+    - name: node-ip
+      value: 192.168.200.10
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: v1.35.6
+clusterName: kubernetes
+controlPlaneEndpoint: 192.168.200.10:6443
+networking:
+  serviceSubnet: 10.96.0.0/16
+  podSubnet: 10.244.0.0/16
+  dnsDomain: cluster.local
+apiServer:
+  extraArgs:
+    - name: authorization-mode
+      value: Node,RBAC
+  certSANs:
+    - 192.168.200.10
+    - rpi-node-01
+    - rpi-node-01.cka.local
+controllerManager:
+  extraArgs:
+    - name: bind-address
+      value: 0.0.0.0
+scheduler:
+  extraArgs:
+    - name: bind-address
+      value: 0.0.0.0
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd
 EOF
 
 sudo kubeadm init --config /tmp/kubeadm-config.yaml --upload-certs
 ```
+
+A few notes on the fields. In `v1beta4` every `extraArgs` block is a list of `name`/`value`
+pairs rather than a map, which is why `authorization-mode` and the two `bind-address`
+entries take that shape. The explicit `KubeletConfiguration` sets `cgroupDriver: systemd` to
+match the containerd setting from document 03; the two must agree or the kubelet fails under
+load. Setting `bind-address: 0.0.0.0` on the controller-manager and scheduler exposes their
+metrics endpoints for the observability stack later. `certSANs` lists every name and IP a
+client might use to reach the API server, and `criSocket` pins containerd explicitly so
+kubeadm does not have to autodetect it.
 
 `--upload-certs` is included in case you want to add a second control plane node later.
 It uploads the certs to a kubeadm-certs Secret in the cluster and prints a `--certificate-key` for the join command.
@@ -100,7 +136,7 @@ Still on `rpi-node-01`:
 
 ```bash
 # Install Tigera operator
-kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.0/manifests/tigera-operator.yaml
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.5/manifests/tigera-operator.yaml
 
 # Apply custom resources (defines the Calico IPPool matching podSubnet)
 kubectl create -f - <<'EOF'

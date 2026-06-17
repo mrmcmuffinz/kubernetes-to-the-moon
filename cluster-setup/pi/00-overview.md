@@ -66,12 +66,12 @@ Internal Kubernetes ranges (same as all other kubeadm guides):
 | Component | Version | Source |
 |-----------|---------|--------|
 | Raspberry Pi OS | Trixie Lite (arm64) | `raspberrypi.com/software/operating-systems` |
-| Kubernetes | v1.35.3 | `pkgs.k8s.io` (arch=arm64) |
-| containerd | Debian Trixie apt | `apt install containerd` |
+| Kubernetes | v1.35.6 | `pkgs.k8s.io` v1.35 channel (arm64), installs latest patch |
+| containerd | 1.7.24 (Debian Trixie apt) | `apt install containerd` |
 | runc | Debian Trixie apt | `apt install runc` |
-| cri-tools (crictl) | v1.35.0 | GitHub release (arm64) |
-| CNI plugins | v1.7.1 | GitHub release (arm64) |
-| Calico | v3.31.0 | Tigera operator manifest (pulls ARM64 images automatically) |
+| cri-tools (crictl) | v1.35.0 | `pkgs.k8s.io` (arm64), `apt install cri-tools` |
+| CNI plugins | Bundled with Calico | calico-node init container populates `/opt/cni/bin` (tarball optional) |
+| Calico | v3.31.5 | Tigera operator manifest (pulls ARM64 images automatically) |
 
 ## Time Estimate
 
