@@ -22,6 +22,31 @@ VLAN 200 (`Lab-Pi`) is configured on the UCG-Fiber and US-24 per
 [`../vm/00-vlan-host-network-setup.md`](../vm/00-vlan-host-network-setup.md) Parts 1 and 2.
 No host bridge needed; Pi nodes plug directly into US-24 access ports on VLAN 200.
 
+```mermaid
+graph TB
+    UCG["UCG-Fiber\n─────────────────\n192.168.200.1\nVLAN 200 gateway"]
+
+    subgraph HOST["Host Machine"]
+        NIC["enp6s0f0\nbare NIC — no IP"]
+        SUB["enp6s0f0.200\n192.168.200.2/24"]
+        NIC -.- SUB
+    end
+
+    SW[("US-24 Switch")]
+
+    subgraph CLUSTER["VLAN 200 — 192.168.200.0/24"]
+        RPI1["rpi-node-01\neth0 · 192.168.200.10"]
+        RPI2["rpi-node-02\neth0 · 192.168.200.11"]
+        RPI3["rpi-node-03\neth0 · 192.168.200.12"]
+    end
+
+    UCG --- SW
+    SUB -->|"Lab-Pi-Trunk\n802.1Q tagged VLAN 200"| SW
+    SW -->|"Lab-Pi-Access\nVLAN 200 untagged"| RPI1
+    SW -->|"Lab-Pi-Access\nVLAN 200 untagged"| RPI2
+    SW -->|"Lab-Pi-Access\nVLAN 200 untagged"| RPI3
+```
+
 | Address | Role |
 |---------|------|
 | `192.168.200.1` | UCG-Fiber gateway (VLAN 200) |
