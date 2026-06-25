@@ -20,7 +20,7 @@ This assignment covers the advanced selector types that enable cross-namespace p
 
 ## Cluster Requirements
 
-This assignment requires a multi-node kind cluster with Calico CNI (same as assignment 1). If you still have the cluster from assignment 1, you can reuse it.
+This assignment requires a multi-node cluster with a CNI that enforces NetworkPolicy (Calico v3.31.5 or later). If you have an existing kubeadm or bare-metal cluster with Calico running, it works directly -- verify with `kubectl get pods -l k8s-app=calico-node -A`. For kind, see `docs/cluster-setup.md#multi-node-with-calico-networkpolicy-support`.
 
 ## Difficulty Progression
 

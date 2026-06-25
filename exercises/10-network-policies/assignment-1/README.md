@@ -20,34 +20,16 @@ Network Policies provide firewall-like controls for pod-to-pod communication. By
 
 ## Cluster Requirements
 
-This assignment requires a multi-node kind cluster with Calico CNI. The default kind CNI (kindnet) does NOT support NetworkPolicy enforcement. You must create a cluster with the default CNI disabled and then install Calico.
+This assignment requires a multi-node cluster with a CNI that enforces NetworkPolicy. The default kind CNI (kindnet) does NOT enforce NetworkPolicy; Calico v3.31.5 or later is the tested option.
 
-Create the cluster:
-
-```bash
-cat <<EOF | KIND_EXPERIMENTAL_PROVIDER=nerdctl kind create cluster --config=-
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-networking:
-  disableDefaultCNI: true
-nodes:
-- role: control-plane
-- role: worker
-- role: worker
-EOF
-```
-
-Install Calico:
+**If you have an existing kubeadm cluster with Calico** (for example, a bare-metal or Pi cluster), no additional setup is needed. Verify that Calico is running:
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.5/manifests/calico.yaml
+kubectl get pods -l k8s-app=calico-node -A
+# Expected: one calico-node pod per node, all Running
 ```
 
-Wait for Calico pods to be ready:
-
-```bash
-kubectl wait --for=condition=Ready pods -l k8s-app=calico-node -n kube-system --timeout=120s
-```
+**If you are using a kind cluster**, follow the setup in `docs/cluster-setup.md#multi-node-with-calico-networkpolicy-support` to create a multi-node kind cluster with the default CNI disabled and Calico installed.
 
 ## Difficulty Progression
 

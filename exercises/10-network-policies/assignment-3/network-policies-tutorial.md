@@ -8,11 +8,14 @@ This tutorial covers the debugging methodology for Network Policy issues. You wi
 
 ## Prerequisites
 
-You need a kind cluster with Calico CNI. Verify Calico is running:
+You need a multi-node cluster with a CNI that enforces NetworkPolicy. Verify Calico is running:
 
 ```bash
-kubectl get pods -n kube-system -l k8s-app=calico-node
+kubectl get pods -l k8s-app=calico-node -A
+# Expected: one calico-node pod per node, all Running
 ```
+
+For kind cluster setup see `docs/cluster-setup.md#multi-node-with-calico-networkpolicy-support`. Existing kubeadm or bare-metal clusters with Calico work without additional setup.
 
 ## Setup
 
@@ -279,7 +282,7 @@ spec:
 Verify your CNI supports NetworkPolicy:
 
 ```bash
-kubectl get pods -n kube-system -l k8s-app=calico-node
+kubectl get pods -l k8s-app=calico-node -A
 # If no Calico pods, policies are not enforced
 ```
 

@@ -8,11 +8,14 @@ This tutorial also covers default deny policies, which form the foundation of ze
 
 ## Prerequisites
 
-You need a kind cluster with Calico CNI (same as assignment 1). Verify Calico is running:
+You need a multi-node cluster with a CNI that enforces NetworkPolicy. Verify Calico is running:
 
 ```bash
-kubectl get pods -n kube-system -l k8s-app=calico-node
+kubectl get pods -l k8s-app=calico-node -A
+# Expected: one calico-node pod per node, all Running
 ```
+
+For kind cluster setup see `docs/cluster-setup.md#multi-node-with-calico-networkpolicy-support`. Existing kubeadm or bare-metal clusters with Calico work without additional setup.
 
 ## Setup
 

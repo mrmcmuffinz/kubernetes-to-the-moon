@@ -46,7 +46,8 @@
       "Bash(chmod +x *)",
       "Bash(echo \"exit: $?\")",
       "Bash(./verify.sh 1.1)",
-      "Bash(grep *)"
+      "Bash(grep *)",
+      "WebFetch(domain:hub.docker.com)"
     ]
   },
   "effortLevel": "xhigh"

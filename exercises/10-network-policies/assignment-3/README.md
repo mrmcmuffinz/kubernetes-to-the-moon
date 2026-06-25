@@ -21,7 +21,7 @@ This assignment teaches systematic Network Policy troubleshooting. You will lear
 
 ## Cluster Requirements
 
-This assignment requires a multi-node kind cluster with Calico CNI (same as assignments 1 and 2).
+This assignment requires a multi-node cluster with a CNI that enforces NetworkPolicy (Calico v3.31.5 or later). If you have an existing kubeadm or bare-metal cluster with Calico running, it works directly -- verify with `kubectl get pods -l k8s-app=calico-node -A`. For kind, see `docs/cluster-setup.md#multi-node-with-calico-networkpolicy-support`.
 
 ## Difficulty Progression
 

@@ -230,6 +230,18 @@ curl -s -H "Host: hello.example.test" http://localhost:8090/
 # Expected: hello-via-gateway
 
 kill $PF_PID 2>/dev/null
+
+# NodePort alternative (externalTrafficPolicy: Local — must hit the node running the Envoy pod):
+NODE=$(kubectl get pods -n envoy-gateway-system \
+  -l gateway.envoyproxy.io/owning-gateway-namespace=tutorial-gw-infra \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NODEIP=$(kubectl get node $NODE \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NODEPORT=$(kubectl get svc -n envoy-gateway-system \
+  -l gateway.envoyproxy.io/owning-gateway-namespace=tutorial-gw-infra \
+  -o jsonpath='{.items[0].spec.ports[0].nodePort}')
+curl -s -H "Host: hello.example.test" http://$NODEIP:$NODEPORT/
+# Expected: hello-via-gateway
 ```
 
 ## Part 4: Status and conditions
@@ -389,6 +401,75 @@ kubectl get httproute -n tutorial-gw-app cross-ns \
 
 Expected output: `True`. The HTTPRoute now resolves the cross-namespace Service.
 
+## Part 7: Debugging data-plane connectivity
+
+When traffic is not reaching the backend, work through the chain layer by layer rather than guessing. Each layer either confirms it is healthy or surfaces the failure point.
+
+**Layer 1: Control plane -- did it accept and program the config?**
+
+Start here. There is no point chasing network issues if the config was never applied.
+
+```bash
+kubectl get gateway -n <ns> <name> \
+  -o jsonpath='{range .status.conditions[*]}{.type}:{.status} ({.reason}){"\n"}{end}'
+
+kubectl get httproute -n <ns> <name> \
+  -o jsonpath='{range .status.parents[0].conditions[*]}{.type}:{.status} ({.reason}){"\n"}{end}'
+```
+
+You need `Programmed: True` on the Gateway and both `Accepted: True` and `ResolvedRefs: True` on the HTTPRoute before anything downstream matters.
+
+**Layer 2: Did the config reach the Envoy proxy?**
+
+The Envoy proxy exposes an admin interface on port 19000. Port-forward to it to inspect the live xDS state. Always specify `--address 127.0.0.1` -- without it, `kubectl port-forward` binds to IPv6 by default, and browsers connect over IPv4, causing the connection to hang.
+
+```bash
+ENVOY_POD=$(kubectl get pods -n envoy-gateway-system \
+  -l gateway.envoyproxy.io/owning-gateway-namespace=<ns> \
+  -o jsonpath='{.items[0].metadata.name}')
+
+kubectl port-forward --address 127.0.0.1 -n envoy-gateway-system \
+  "$ENVOY_POD" 19000:19000 &
+sleep 2
+```
+
+Check that your listener and cluster are present:
+
+```bash
+curl http://localhost:19000/config_dump | jq '.configs[] | select(.["@type"] | contains("Listener"))'
+curl http://localhost:19000/config_dump | jq '.configs[] | select(.["@type"] | contains("Cluster"))'
+```
+
+If your route or backend cluster is missing here, the control plane did not translate your Gateway/HTTPRoute into xDS config correctly despite reporting success in status conditions.
+
+**Layer 3: Is Envoy receiving the request?**
+
+Envoy emits access logs to stdout. If your request does not appear here, the problem is upstream of Envoy (port-forward, NodePort reachability, or the wrong Host header).
+
+```bash
+kubectl logs -n envoy-gateway-system "$ENVOY_POD"
+```
+
+A 404 means Envoy received the request but found no matching route (check hostnames and path). A 503 means Envoy matched the route but could not reach the backend.
+
+**Layer 4: Does the backend Service have endpoints?**
+
+An empty endpoints list means no pods matched the Service selector. Envoy will 503 every request.
+
+```bash
+kubectl get endpoints -n <ns> <service>
+```
+
+**Layer 5: Does the backend pod respond directly?**
+
+Bypass the entire Gateway stack and hit the backend pod from within the cluster. This confirms the application itself is healthy.
+
+```bash
+kubectl run debug --rm -it --image=curlimages/curl \
+  -n <same-ns-as-backend> \
+  -- curl http://<service>.<namespace>.svc.cluster.local
+```
+
 ## Cleanup
 
 ```bash
@@ -411,6 +492,9 @@ kubectl delete namespace envoy-gateway-system
 | HTTPRoute status per parent | `kubectl get httproute -n <ns> <name> -o jsonpath='{.status.parents[0].conditions}'` |
 | Envoy Gateway controller logs | `kubectl logs -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gatewayclass=eg --tail=50` |
 | Find the data-plane Service for a Gateway | `kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=<ns>` |
+| Port-forward to Envoy admin (IPv4) | `kubectl port-forward --address 127.0.0.1 -n envoy-gateway-system <pod> 19000:19000` |
+| Envoy xDS config dump | `curl http://localhost:19000/config_dump \| jq .` |
+| Envoy access logs | `kubectl logs -n envoy-gateway-system <envoy-pod>` |
 
 ## Key Takeaways
 

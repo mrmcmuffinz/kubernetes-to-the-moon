@@ -2,7 +2,7 @@
 
 Work through these 15 exercises to build practical skills with Kubernetes Network Policies. Complete the tutorial (network-policies-tutorial.md) before starting these exercises. Each level increases in complexity, building on concepts from previous levels.
 
-**Important:** These exercises require a kind cluster with Calico CNI. See the README for setup instructions.
+**Important:** These exercises require a cluster with a CNI that enforces NetworkPolicy (Calico v3.31.5 or later). See the README for setup instructions.
 
 ---
 
@@ -483,21 +483,18 @@ EOF
 kubectl wait --for=condition=Ready pods --all -n ex-3-1 --timeout=60s
 ```
 
-**Task:** The frontend pod should be able to reach the api-server, but the policy is blocking it. Diagnose why and describe the fix.
+**Task:** The frontend pod should be able to reach the api-server but cannot. The configuration has one or more problems. Find and fix whatever is needed so the connection succeeds.
 
 **Verification:**
 
 ```bash
 API_IP=$(kubectl get pod api-server -n ex-3-1 -o jsonpath='{.status.podIP}')
 
-# This should work but currently fails
+# Before fix - currently blocked
 timeout 3 kubectl exec -n ex-3-1 frontend -- wget -qO- --timeout=2 http://$API_IP || echo "frontend -> api: BLOCKED"
 
-# Check the policy
-kubectl describe networkpolicy api-policy -n ex-3-1
-
-# Check frontend labels
-kubectl get pod frontend -n ex-3-1 --show-labels
+# After fix - should succeed
+kubectl exec -n ex-3-1 frontend -- wget -qO- --timeout=2 http://$API_IP && echo "frontend -> api: ALLOWED"
 ```
 
 ---
@@ -560,19 +557,18 @@ EOF
 kubectl wait --for=condition=Ready pods --all -n ex-3-2 --timeout=60s
 ```
 
-**Task:** The policy should protect the database pod, but the backend can still reach it because the policy is not matching. Diagnose why.
+**Task:** The policy should protect the database pod but is not working as intended. The configuration has one or more problems. Find and fix whatever is needed so the database pod is properly protected.
 
 **Verification:**
 
 ```bash
 DB_IP=$(kubectl get pod database -n ex-3-2 -o jsonpath='{.status.podIP}')
 
-# Backend can reach database (policy not matching)
-kubectl exec -n ex-3-2 backend -- wget -qO- --timeout=2 http://$DB_IP && echo "backend -> database: ALLOWED (policy not applied)"
+# Before fix - backend reaches database (policy not effective)
+kubectl exec -n ex-3-2 backend -- wget -qO- --timeout=2 http://$DB_IP && echo "backend -> database: ALLOWED"
 
-# Check why policy does not match
-kubectl get pod database -n ex-3-2 --show-labels
-kubectl describe networkpolicy db-policy -n ex-3-2
+# After fix - backend should be blocked
+timeout 3 kubectl exec -n ex-3-2 backend -- wget -qO- --timeout=2 http://$DB_IP || echo "backend -> database: BLOCKED"
 ```
 
 ---
@@ -638,18 +634,18 @@ EOF
 kubectl wait --for=condition=Ready pods --all -n ex-3-3 --timeout=60s
 ```
 
-**Task:** The client should be able to access the webserver on port 80, but the connection times out. Diagnose the policy configuration issue.
+**Task:** The client should be able to access the webserver on port 80 but the connection fails. The configuration has one or more problems. Find and fix whatever is needed so port 80 is accessible.
 
 **Verification:**
 
 ```bash
 WEB_IP=$(kubectl get pod webserver -n ex-3-3 -o jsonpath='{.status.podIP}')
 
-# This should work but fails
+# Before fix - currently blocked
 timeout 3 kubectl exec -n ex-3-3 client -- wget -qO- --timeout=2 http://$WEB_IP:80 || echo "port 80: BLOCKED"
 
-# Check the policy port configuration
-kubectl describe networkpolicy web-policy -n ex-3-3 | grep -A5 "Allowing ingress"
+# After fix - should succeed
+kubectl exec -n ex-3-3 client -- wget -qO- --timeout=2 http://$WEB_IP:80 && echo "port 80: ALLOWED"
 ```
 
 ---
@@ -723,7 +719,7 @@ DB_IP=$(kubectl get pod database -n ex-4-1 -o jsonpath='{.status.podIP}')
 kubectl exec -n ex-4-1 frontend -- wget -qO- --timeout=2 http://$API_IP && echo "frontend -> api: ALLOWED"
 
 # api -> database should work
-kubectl exec -n ex-4-1 api -- wget -qO- --timeout=2 http://$DB_IP && echo "api -> database: ALLOWED"
+kubectl exec -n ex-4-1 api -- curl -sf --connect-timeout 2 http://$DB_IP && echo "api -> database: ALLOWED"
 ```
 
 ---
@@ -913,7 +909,7 @@ BACKEND_IP=$(kubectl get pod backend -n ex-5-1 -o jsonpath='{.status.podIP}')
 kubectl exec -n ex-5-1 external-client -- wget -qO- --timeout=2 http://$FRONTEND_IP && echo "external -> frontend: ALLOWED"
 
 # frontend -> backend should work
-kubectl exec -n ex-5-1 frontend -- wget -qO- --timeout=2 http://$BACKEND_IP && echo "frontend -> backend: ALLOWED"
+kubectl exec -n ex-5-1 frontend -- curl -sf --connect-timeout 2 http://$BACKEND_IP && echo "frontend -> backend: ALLOWED"
 
 # external -> backend should be blocked
 timeout 3 kubectl exec -n ex-5-1 external-client -- wget -qO- --timeout=2 http://$BACKEND_IP || echo "external -> backend: BLOCKED"
@@ -979,7 +975,7 @@ EOF
 kubectl wait --for=condition=Ready pods --all -n ex-5-2 --timeout=60s
 ```
 
-**Task:** service-b should be able to reach service-a, but it is being blocked. Diagnose the issue and fix it by modifying the appropriate resource (hint: you might need to modify the pod, not the policy).
+**Task:** service-b should be able to reach service-a, but it is being blocked. The configuration has one or more problems. Find and fix whatever is needed so the connection succeeds.
 
 **Verification:**
 
@@ -1076,10 +1072,10 @@ DB_IP=$(kubectl get pod db -n ex-5-3 -o jsonpath='{.status.podIP}')
 kubectl exec -n ex-5-3 tester -- wget -qO- --timeout=2 http://$WEB_IP && echo "tester -> web: ALLOWED"
 
 # web -> api (should work)
-kubectl exec -n ex-5-3 web -- wget -qO- --timeout=2 http://$API_IP && echo "web -> api: ALLOWED"
+kubectl exec -n ex-5-3 web -- curl -sf --connect-timeout 2 http://$API_IP && echo "web -> api: ALLOWED"
 
 # api -> db (should work)
-kubectl exec -n ex-5-3 api -- wget -qO- --timeout=2 http://$DB_IP && echo "api -> db: ALLOWED"
+kubectl exec -n ex-5-3 api -- curl -sf --connect-timeout 2 http://$DB_IP && echo "api -> db: ALLOWED"
 
 # tester -> api (should be blocked)
 timeout 3 kubectl exec -n ex-5-3 tester -- wget -qO- --timeout=2 http://$API_IP || echo "tester -> api: BLOCKED"
@@ -1088,7 +1084,7 @@ timeout 3 kubectl exec -n ex-5-3 tester -- wget -qO- --timeout=2 http://$API_IP 
 timeout 3 kubectl exec -n ex-5-3 tester -- wget -qO- --timeout=2 http://$DB_IP || echo "tester -> db: BLOCKED"
 
 # web -> db (should be blocked - must go through api)
-timeout 3 kubectl exec -n ex-5-3 web -- wget -qO- --timeout=2 http://$DB_IP || echo "web -> db: BLOCKED"
+timeout 3 kubectl exec -n ex-5-3 web -- curl -sf --connect-timeout 2 http://$DB_IP || echo "web -> db: BLOCKED"
 ```
 
 ---

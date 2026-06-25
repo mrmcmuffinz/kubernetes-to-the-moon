@@ -282,7 +282,7 @@ curl -s -H "Host: both.example.test" http://localhost:8080/
 
 ### Exercise 3.1
 
-**Objective:** The Ingress below uses a Traefik-specific annotation on an HAProxy Ingress and does not behave as expected.
+**Objective:** An HAProxy Ingress has a rewrite configured but requests are not reaching the backend as expected. Diagnose and fix.
 
 **Setup:**
 
@@ -336,7 +336,7 @@ EOF
 kubectl -n ex-3-1 rollout status deployment/app --timeout=60s
 ```
 
-**Task:** The intent was for requests to `/wrong/anything` to reach the backend as `/`. The backend instead sees the full path. Fix by using the correct HAProxy annotation.
+**Task:** Fix the Ingress so that requests to `/wrong/anything` reach the backend as `/`.
 
 **Verification:**
 
@@ -362,7 +362,6 @@ openssl req -x509 -newkey rsa:2048 -nodes -sha256 \
   -addext "subjectAltName = DNS:secure.example.test" \
   -keyout /tmp/ex32.key -out /tmp/ex32.crt
 
-# Intentionally create the Secret with the wrong keys (not tls.crt / tls.key)
 kubectl create secret generic -n ex-3-2 wrong-secret \
   --from-file=certificate.pem=/tmp/ex32.crt \
   --from-file=private-key.pem=/tmp/ex32.key
@@ -406,7 +405,7 @@ EOF
 kubectl -n ex-3-2 rollout status deployment/secure-app --timeout=60s
 ```
 
-**Task:** The TLS handshake succeeds with a wrong certificate (HAProxy's default fallback) because the Secret is not `kubernetes.io/tls`-typed and does not have `tls.crt`/`tls.key` keys. Replace the Secret with a proper TLS Secret.
+**Task:** The Ingress is not terminating TLS with the expected certificate. Diagnose and fix the root cause.
 
 **Verification:**
 
@@ -418,8 +417,6 @@ curl -sk --resolve secure.example.test:8443:127.0.0.1 -v https://secure.example.
 kubectl get secret -n ex-3-2 wrong-secret -o jsonpath='{.type}'
 # Expected: kubernetes.io/tls
 ```
-
-Note: the solution is to delete the broken Secret and recreate with `kubectl create secret tls ...`. The original name is kept for continuity.
 
 ---
 
@@ -458,7 +455,6 @@ spec: {selector: {app: dangling}, ports: [{port: 80, targetPort: 80}]}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata: {name: stuck}
-  # Missing ingressClassName! And no cluster default annotation for haproxy.
 spec:
   rules:
   - host: stuck.example.test
@@ -467,7 +463,7 @@ EOF
 kubectl -n ex-3-3 rollout status deployment/dangling --timeout=60s
 ```
 
-**Task:** The Ingress is missing `ingressClassName`. Fix by adding the correct class.
+**Task:** Fix the Ingress so it is picked up by the controller and has an ADDRESS.
 
 **Verification:**
 
@@ -746,7 +742,7 @@ curl -sk --resolve production.example.test:8443:127.0.0.1 https://production.exa
 
 ### Exercise 5.2
 
-**Objective:** Diagnose a compound TLS failure with three issues: wrong Secret type, wrong controller annotation, and missing `spec.tls[].hosts` match.
+**Objective:** Diagnose a compound TLS failure with three issues. Fix all three.
 
 **Setup:**
 
@@ -804,7 +800,7 @@ EOF
 kubectl -n ex-5-2 rollout status deployment/backend --timeout=60s
 ```
 
-**Task:** Fix the Ingress so: (1) HTTP requests redirect to HTTPS, (2) HTTPS requests to `five-two.example.test` succeed, (3) the cert shown is `CN=five-two.example.test`. The three fixes: use `haproxy-ingress.github.io/ssl-redirect` annotation, replace `bad-secret` with a proper `kubernetes.io/tls` Secret, update `spec.tls[].hosts` to include the actual hostname.
+**Task:** Fix the Ingress so HTTP requests redirect to HTTPS, HTTPS requests succeed, and the certificate CN matches the hostname.
 
 **Verification:**
 

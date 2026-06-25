@@ -1,8 +1,8 @@
 # Advanced Gateway API Routing Homework
 
-Fifteen exercises covering NGINX Gateway Fabric v2.5.1, header/query/method matching, traffic splitting, and filters (RequestHeaderModifier, RequestRedirect, URLRewrite, ResponseHeaderModifier). Work through the tutorial first. Assumes Envoy Gateway and NGINX Gateway Fabric are both installed; exercises primarily use NGINX Gateway Fabric.
+Fifteen exercises covering NGINX Gateway Fabric v2.5.1, header/query/method matching, traffic splitting, and filters (RequestHeaderModifier, RequestRedirect, URLRewrite, ResponseHeaderModifier). Work through the tutorial first. Assumes Envoy Gateway and NGINX Gateway Fabric are both installed.
 
-Namespaces follow `ex-<level>-<exercise>`. The setup blocks create a Gateway per namespace and rely on `kubectl port-forward` to reach the NGINX data-plane Service on localhost.
+Namespaces follow `ex-<level>-<exercise>`. The setup blocks create a Gateway per namespace. NGF v2.x provisions a dedicated data-plane pod and Service named `<gateway-name>-nginx` in the Gateway's namespace. Both NGF and Envoy Gateway set `externalTrafficPolicy: Local`, so verification commands must target the specific node running the data-plane pod. The label `gateway.networking.k8s.io/gateway-name=<gw-name>` selects the NGF data-plane pod.
 
 ---
 
@@ -34,7 +34,7 @@ spec:
     metadata: {labels: {app: hi}}
     spec:
       containers:
-      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /usr/share/nginx/html}]}
+      - {name: 'n', image: nginx:1.27, volumeMounts: [{name: h, mountPath: /usr/share/nginx/html}]}
       volumes: [{name: h, configMap: {name: hi-html}}]
 ---
 apiVersion: v1
@@ -60,27 +60,41 @@ kubectl get httproute -n ex-1-1 hi-route \
   -o jsonpath='{.status.parents[0].conditions[?(@.type=="Accepted")].status}'
 # Expected: True
 
-SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
-kubectl port-forward -n nginx-gateway "svc/$SVC" 9010:80 &
-sleep 2
-curl -s -H "Host: hi.example.test" http://localhost:9010/
+NGF_NODE=$(kubectl get pods -n ex-1-1 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-1-1 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
+curl -s -H "Host: hi.example.test" "http://$NGINX_IP:$NGINX_PORT/"
 # Expected: hi-one-one
-pkill -f "port-forward.*$SVC" 2>/dev/null
 ```
 
 ---
 
 ### Exercise 1.2
 
-**Objective:** Confirm the NGF GatewayClass is the one named `nginx` with controllerName `gateway.nginx.org/nginx-gateway-controller`.
+**Objective:** Create a Gateway using the `nginx` GatewayClass and confirm NGF provisions the expected data-plane resources.
 
-**Task:** Extract the controllerName for the `nginx` GatewayClass.
+**Setup:**
+
+```bash
+kubectl create namespace ex-1-2
+```
+
+**Task:** Create a Gateway named `gw` in namespace `ex-1-2` using the `nginx` GatewayClass with an HTTP listener on port 80. Confirm the Gateway reaches `Programmed: True` and identify the data-plane Service NGF provisions in the namespace.
 
 **Verification:**
 
 ```bash
-kubectl get gatewayclass nginx -o jsonpath='{.spec.controllerName}'
-# Expected: gateway.nginx.org/nginx-gateway-controller
+sleep 10
+kubectl get gateway -n ex-1-2 gw \
+  -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status}'
+# Expected: True
+
+kubectl get svc -n ex-1-2 gw-nginx -o jsonpath='{.spec.type}'
+# Expected: LoadBalancer
 ```
 
 ---
@@ -118,7 +132,7 @@ spec:
     metadata: {labels: {app: same}}
     spec:
       containers:
-      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /usr/share/nginx/html}]}
+      - {name: 'n', image: nginx:1.27, volumeMounts: [{name: h, mountPath: /usr/share/nginx/html}]}
       volumes: [{name: h, configMap: {name: same-html}}]
 ---
 apiVersion: v1
@@ -140,20 +154,28 @@ kubectl -n ex-1-3 rollout status deployment/same --timeout=60s
 
 ```bash
 sleep 5
-ENVOY_SVC=$(kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-1-3 -o jsonpath='{.items[0].metadata.name}')
-NGINX_SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
+NODE=$(kubectl get pods -n envoy-gateway-system \
+  -l gateway.envoyproxy.io/owning-gateway-namespace=ex-1-3 \
+  -o jsonpath='{.items[0].spec.nodeName}')
+ENVOY_IP=$(kubectl get node "$NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+ENVOY_PORT=$(kubectl get svc -n envoy-gateway-system \
+  -l gateway.envoyproxy.io/owning-gateway-namespace=ex-1-3 \
+  -o jsonpath='{.items[0].spec.ports[0].nodePort}')
 
-kubectl port-forward -n envoy-gateway-system "svc/$ENVOY_SVC" 9020:80 &
-kubectl port-forward -n nginx-gateway "svc/$NGINX_SVC" 9021:80 &
-sleep 3
+NGF_NODE=$(kubectl get pods -n ex-1-3 \
+  -l gateway.networking.k8s.io/gateway-name=gw-nginx \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-1-3 gw-nginx-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 
-curl -s -H "Host: same.example.test" http://localhost:9020/
+curl -s -H "Host: same.example.test" "http://$ENVOY_IP:$ENVOY_PORT/"
 # Expected: parity
 
-curl -s -H "Host: same.example.test" http://localhost:9021/
+curl -s -H "Host: same.example.test" "http://$NGINX_IP:$NGINX_PORT/"
 # Expected: parity
-
-pkill -f "port-forward" 2>/dev/null
 ```
 
 ---
@@ -186,7 +208,7 @@ spec:
     metadata: {labels: {app: red-app}}
     spec:
       containers:
-      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /usr/share/nginx/html}]}
+      - {name: 'n', image: nginx:1.27, volumeMounts: [{name: h, mountPath: /usr/share/nginx/html}]}
       volumes: [{name: h, configMap: {name: red-html}}]
 ---
 apiVersion: v1
@@ -209,7 +231,7 @@ spec:
     metadata: {labels: {app: blue-app}}
     spec:
       containers:
-      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /usr/share/nginx/html}]}
+      - {name: 'n', image: nginx:1.27, volumeMounts: [{name: h, mountPath: /usr/share/nginx/html}]}
       volumes: [{name: h, configMap: {name: blue-html}}]
 ---
 apiVersion: v1
@@ -231,20 +253,22 @@ kubectl -n ex-2-1 rollout status deployment/red-app deployment/blue-app --timeou
 
 ```bash
 sleep 5
-SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
-kubectl port-forward -n nginx-gateway "svc/$SVC" 9030:80 &
-sleep 2
+NGF_NODE=$(kubectl get pods -n ex-2-1 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-2-1 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 
-curl -s -H "Host: tenant.example.test" -H "X-Tenant: red" http://localhost:9030/
+curl -s -H "Host: tenant.example.test" -H "X-Tenant: red" "http://$NGINX_IP:$NGINX_PORT/"
 # Expected: red
 
-curl -s -H "Host: tenant.example.test" -H "X-Tenant: blue" http://localhost:9030/
+curl -s -H "Host: tenant.example.test" -H "X-Tenant: blue" "http://$NGINX_IP:$NGINX_PORT/"
 # Expected: blue
 
-curl -sI -H "Host: tenant.example.test" http://localhost:9030/
+curl -sI -H "Host: tenant.example.test" "http://$NGINX_IP:$NGINX_PORT/"
 # Expected: 404 (no header)
-
-pkill -f "port-forward" 2>/dev/null
 ```
 
 ---
@@ -255,39 +279,25 @@ pkill -f "port-forward" 2>/dev/null
 
 **Setup:** Continue using ex-2-1's Gateway and backends.
 
-```bash
-kubectl apply -n ex-2-1 -f - <<'EOF'
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata: {name: query-routing}
-spec:
-  parentRefs: [{name: gw}]
-  hostnames: ["query.example.test"]
-  rules:
-  - matches: [{queryParams: [{name: env, value: prod}]}]
-    backendRefs: [{name: red-app, port: 80}]
-  - matches: [{queryParams: [{name: env, value: staging}]}]
-    backendRefs: [{name: blue-app, port: 80}]
-EOF
-```
-
-**Task:** Verify the routing above.
+**Task:** Create HTTPRoute `query-routing` in `ex-2-1` attached to `gw`, hostname `query.example.test`, with two rules: requests with query param `env=prod` route to `red-app`, requests with `env=staging` route to `blue-app`.
 
 **Verification:**
 
 ```bash
 sleep 5
-SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
-kubectl port-forward -n nginx-gateway "svc/$SVC" 9031:80 &
-sleep 2
+NGF_NODE=$(kubectl get pods -n ex-2-1 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-2-1 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 
-curl -s -H "Host: query.example.test" "http://localhost:9031/?env=prod"
+curl -s -H "Host: query.example.test" "http://$NGINX_IP:$NGINX_PORT/?env=prod"
 # Expected: red
 
-curl -s -H "Host: query.example.test" "http://localhost:9031/?env=staging"
+curl -s -H "Host: query.example.test" "http://$NGINX_IP:$NGINX_PORT/?env=staging"
 # Expected: blue
-
-pkill -f "port-forward" 2>/dev/null
 ```
 
 ---
@@ -296,48 +306,76 @@ pkill -f "port-forward" 2>/dev/null
 
 **Objective:** Combine path + method + header matches in a single rule (AND semantics).
 
-**Setup:** Continue using ex-2-1's Gateway.
+**Setup:**
 
 ```bash
-kubectl apply -n ex-2-1 -f - <<'EOF'
+kubectl create namespace ex-2-3
+kubectl apply -n ex-2-3 -f - <<'EOF'
 apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata: {name: combined}
+kind: Gateway
+metadata: {name: gw}
 spec:
-  parentRefs: [{name: gw}]
-  hostnames: ["combined.example.test"]
-  rules:
-  - matches:
-    - path: {type: PathPrefix, value: /api}
-      method: POST
-      headers: [{name: X-API-Key, value: admin}]
-    backendRefs: [{name: red-app, port: 80}]
+  gatewayClassName: nginx
+  listeners: [{name: http, protocol: HTTP, port: 80, allowedRoutes: {namespaces: {from: Same}}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: echo-app}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: echo-app}}
+  template:
+    metadata: {labels: {app: echo-app}}
+    spec:
+      containers:
+      - name: 'n'
+        image: nginx:1.27
+        volumeMounts: [{name: c, mountPath: /etc/nginx/conf.d}]
+      volumes: [{name: c, configMap: {name: echo-app-conf}}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: echo-app-conf}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / { return 200 "echo-red\n"; }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata: {name: echo-app}
+spec: {selector: {app: echo-app}, ports: [{port: 80, targetPort: 80}]}
 EOF
+kubectl -n ex-2-3 rollout status deployment/echo-app --timeout=60s
 ```
 
-**Task:** Verify all three conditions must hold.
+**Task:** Create HTTPRoute `combined` in `ex-2-3` attached to `gw`, hostname `combined.example.test`, with a single rule that matches all three conditions simultaneously: path prefix `/api`, method `POST`, and header `X-API-Key: admin`, routing to `echo-app`.
 
 **Verification:**
 
 ```bash
 sleep 5
-SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
-kubectl port-forward -n nginx-gateway "svc/$SVC" 9032:80 &
-sleep 2
+NGF_NODE=$(kubectl get pods -n ex-2-3 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-2-3 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 
 # All three match:
-curl -s -X POST -H "Host: combined.example.test" -H "X-API-Key: admin" http://localhost:9032/api
-# Expected: red
+curl -s -X POST -H "Host: combined.example.test" -H "X-API-Key: admin" "http://$NGINX_IP:$NGINX_PORT/api"
+# Expected: echo-red
 
 # Missing header:
-curl -sI -X POST -H "Host: combined.example.test" http://localhost:9032/api
-# Expected: 404
+curl -sI -X POST -H "Host: combined.example.test" "http://$NGINX_IP:$NGINX_PORT/api"
+# Expected: HTTP/1.1 404
 
 # Wrong method:
-curl -sI -X GET -H "Host: combined.example.test" -H "X-API-Key: admin" http://localhost:9032/api
-# Expected: 404
-
-pkill -f "port-forward" 2>/dev/null
+curl -sI -X GET -H "Host: combined.example.test" -H "X-API-Key: admin" "http://$NGINX_IP:$NGINX_PORT/api"
+# Expected: HTTP/1.1 404
 ```
 
 ---
@@ -346,7 +384,7 @@ pkill -f "port-forward" 2>/dev/null
 
 ### Exercise 3.1
 
-**Objective:** Filter applied in the wrong order: RequestRedirect before URLRewrite means the rewrite never executes. Fix.
+**Objective:** An HTTPRoute filter combination is not producing the expected response. Fix.
 
 **Setup:**
 
@@ -407,27 +445,29 @@ EOF
 kubectl -n ex-3-1 rollout status deployment/app --timeout=60s
 ```
 
-**Task:** The intent was to rewrite the path first, then optionally redirect. But with both filters present, only one effectively runs on any given request (a redirect is terminal). Decide: either remove the redirect (the rewrite should run) or move the redirect before the rewrite (but then the rewrite never runs). For this exercise, remove the RequestRedirect; the app should respond with `app-got: /new/items` when `/old/items` is requested.
+**Task:** Fix the HTTPRoute so that a request to `/old/items` returns `app-got: /new/items`.
 
 **Verification:**
 
 ```bash
 sleep 5
-SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
-kubectl port-forward -n nginx-gateway "svc/$SVC" 9041:80 &
-sleep 2
+NGF_NODE=$(kubectl get pods -n ex-3-1 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-3-1 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 
-curl -s -H "Host: order.example.test" http://localhost:9041/old/items
+curl -s -H "Host: order.example.test" "http://$NGINX_IP:$NGINX_PORT/old/items"
 # Expected: app-got: /new/items
-
-pkill -f "port-forward" 2>/dev/null
 ```
 
 ---
 
 ### Exercise 3.2
 
-**Objective:** Header match is case-sensitive for values. Fix a case mismatch.
+**Objective:** An HTTPRoute with a header match is not routing as expected. Diagnose and fix.
 
 **Setup:**
 
@@ -477,27 +517,29 @@ EOF
 kubectl -n ex-3-2 rollout status deployment/app --timeout=60s
 ```
 
-**Task:** A client is sending `X-Env: production` (lowercase) but the rule expects `Production` (capitalized). Fix by adjusting the HTTPRoute's `value` to `production` (matching what the client sends).
+**Task:** Fix the HTTPRoute so that requests with `X-Env: production` reach the backend.
 
 **Verification:**
 
 ```bash
 sleep 5
-SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
-kubectl port-forward -n nginx-gateway "svc/$SVC" 9042:80 &
-sleep 2
+NGF_NODE=$(kubectl get pods -n ex-3-2 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-3-2 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 
-curl -s -H "Host: case.example.test" -H "X-Env: production" http://localhost:9042/
+curl -s -H "Host: case.example.test" -H "X-Env: production" "http://$NGINX_IP:$NGINX_PORT/"
 # Expected: case-app
-
-pkill -f "port-forward" 2>/dev/null
 ```
 
 ---
 
 ### Exercise 3.3
 
-**Objective:** Traffic split with mismatched weights. Fix.
+**Objective:** A traffic split is not distributing traffic as expected. Fix.
 
 **Setup:**
 
@@ -571,26 +613,28 @@ EOF
 kubectl -n ex-3-3 rollout status deployment/v1-svc deployment/v2-svc --timeout=60s
 ```
 
-**Task:** The current config sends 100% to v2. The intent was a 70/30 split between v1 and v2. Fix.
+**Task:** Fix the configuration so that v1 receives 70% of traffic and v2 receives 30%.
 
 **Verification:**
 
 ```bash
 sleep 5
-SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
-kubectl port-forward -n nginx-gateway "svc/$SVC" 9043:80 &
-sleep 2
+NGF_NODE=$(kubectl get pods -n ex-3-3 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-3-3 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 
 V1=0; V2=0
 for i in $(seq 1 50); do
-  r=$(curl -s -H "Host: split.example.test" http://localhost:9043/)
+  r=$(curl -s -H "Host: split.example.test" "http://$NGINX_IP:$NGINX_PORT/")
   [ "$r" = "v1" ] && V1=$((V1+1))
   [ "$r" = "v2" ] && V2=$((V2+1))
 done
 echo "v1: $V1, v2: $V2"
 # Expected: roughly 35/15 (with variance; v1 clearly dominates)
-
-pkill -f "port-forward" 2>/dev/null
 ```
 
 ---
@@ -652,14 +696,16 @@ kubectl -n ex-4-1 rollout status deployment/echo --timeout=60s
 
 ```bash
 sleep 5
-SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
-kubectl port-forward -n nginx-gateway "svc/$SVC" 9044:80 &
-sleep 2
+NGF_NODE=$(kubectl get pods -n ex-4-1 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-4-1 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 
-curl -s -H "Host: header.example.test" http://localhost:9044/
+curl -s -H "Host: header.example.test" "http://$NGINX_IP:$NGINX_PORT/"
 # Expected: x-source=gateway-filter
-
-pkill -f "port-forward" 2>/dev/null
 ```
 
 ---
@@ -706,15 +752,17 @@ kubectl -n ex-4-2 rollout status deployment/dummy --timeout=60s
 
 ```bash
 sleep 5
-SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
-kubectl port-forward -n nginx-gateway "svc/$SVC" 9045:80 &
-sleep 2
+NGF_NODE=$(kubectl get pods -n ex-4-2 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-4-2 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 
-curl -sI -H "Host: insecure.example.test" http://localhost:9045/anywhere
+curl -sI -H "Host: insecure.example.test" "http://$NGINX_IP:$NGINX_PORT/anywhere"
 # Expected: HTTP/1.1 301 Moved Permanently
 # Expected (Location): https://secure.example.test/anywhere
-
-pkill -f "port-forward" 2>/dev/null
 ```
 
 ---
@@ -772,17 +820,19 @@ kubectl -n ex-4-3 rollout status deployment/echo --timeout=60s
 
 ```bash
 sleep 5
-SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
-kubectl port-forward -n nginx-gateway "svc/$SVC" 9046:80 &
-sleep 2
+NGF_NODE=$(kubectl get pods -n ex-4-3 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-4-3 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 
-curl -s -H "Host: rw.example.test" http://localhost:9046/dynamic/path
+curl -s -H "Host: rw.example.test" "http://$NGINX_IP:$NGINX_PORT/dynamic/path"
 # Expected: path=/fixed
 
-curl -s -H "Host: rw.example.test" http://localhost:9046/another
+curl -s -H "Host: rw.example.test" "http://$NGINX_IP:$NGINX_PORT/another"
 # Expected: path=/fixed
-
-pkill -f "port-forward" 2>/dev/null
 ```
 
 ---
@@ -860,14 +910,18 @@ kubectl -n ex-5-1 rollout status deployment/v1-app deployment/v2-app --timeout=6
 
 ```bash
 sleep 5
-SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
-kubectl port-forward -n nginx-gateway "svc/$SVC" 9051:80 &
-sleep 2
+NGF_NODE=$(kubectl get pods -n ex-5-1 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-5-1 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 
 echo "Phase 1 (90/10):"
 V1=0; V2=0
 for i in $(seq 1 100); do
-  r=$(curl -s -H "Host: canary.example.test" http://localhost:9051/)
+  r=$(curl -s -H "Host: canary.example.test" "http://$NGINX_IP:$NGINX_PORT/")
   [ "$r" = "v1" ] && V1=$((V1+1))
   [ "$r" = "v2" ] && V2=$((V2+1))
 done
@@ -883,21 +937,19 @@ sleep 3
 echo "Phase 2 (50/50):"
 V1=0; V2=0
 for i in $(seq 1 100); do
-  r=$(curl -s -H "Host: canary.example.test" http://localhost:9051/)
+  r=$(curl -s -H "Host: canary.example.test" "http://$NGINX_IP:$NGINX_PORT/")
   [ "$r" = "v1" ] && V1=$((V1+1))
   [ "$r" = "v2" ] && V2=$((V2+1))
 done
 echo "v1: $V1, v2: $V2"
 # Expected: both in roughly [40, 60] range
-
-pkill -f "port-forward" 2>/dev/null
 ```
 
 ---
 
 ### Exercise 5.2
 
-**Objective:** Diagnose a compound filter failure: a URLRewrite that does not reach the backend because a RequestRedirect is earlier in the chain.
+**Objective:** An HTTPRoute is not forwarding requests to the backend as expected. Diagnose and fix.
 
 **Setup:**
 
@@ -962,20 +1014,22 @@ EOF
 kubectl -n ex-5-2 rollout status deployment/app --timeout=60s
 ```
 
-**Task:** The client observes a 302 redirect to `/new-api` instead of a 200 with the path `/v2/*`. The intent was to rewrite to `/v2` and forward to the backend; there should be no redirect. Remove the RequestRedirect filter.
+**Task:** Fix the HTTPRoute so that a request to `/old-api/data` returns `final-path=/v2/data`.
 
 **Verification:**
 
 ```bash
 sleep 5
-SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
-kubectl port-forward -n nginx-gateway "svc/$SVC" 9052:80 &
-sleep 2
+NGF_NODE=$(kubectl get pods -n ex-5-2 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-5-2 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 
-curl -s -H "Host: order.example.test" http://localhost:9052/old-api/data
+curl -s -H "Host: order.example.test" "http://$NGINX_IP:$NGINX_PORT/old-api/data"
 # Expected: final-path=/v2/data
-
-pkill -f "port-forward" 2>/dev/null
 ```
 
 ---
@@ -1064,17 +1118,19 @@ kubectl -n ex-5-3 rollout status deployment/stable deployment/canary --timeout=6
 
 ```bash
 sleep 5
-SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
-kubectl port-forward -n nginx-gateway "svc/$SVC" 9053:80 &
-sleep 2
+NGF_NODE=$(kubectl get pods -n ex-5-3 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-5-3 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 
-curl -s -H "Host: prod.example.test" -H "X-Canary: true" http://localhost:9053/api/data
+curl -s -H "Host: prod.example.test" -H "X-Canary: true" "http://$NGINX_IP:$NGINX_PORT/api/data"
 # Expected: canary path=/v2/data
 
-curl -s -H "Host: prod.example.test" http://localhost:9053/api/data
+curl -s -H "Host: prod.example.test" "http://$NGINX_IP:$NGINX_PORT/api/data"
 # Expected: stable path=/api/data
-
-pkill -f "port-forward" 2>/dev/null
 ```
 
 ---
@@ -1082,14 +1138,12 @@ pkill -f "port-forward" 2>/dev/null
 ## Cleanup
 
 ```bash
-for ns in ex-1-1 ex-1-2 ex-1-3 ex-2-1 ex-3-1 ex-3-2 ex-3-3 \
+for ns in ex-1-1 ex-1-2 ex-1-3 ex-2-1 ex-2-3 ex-3-1 ex-3-2 ex-3-3 \
          ex-4-1 ex-4-2 ex-4-3 ex-5-1 ex-5-2 ex-5-3; do
   kubectl delete namespace "$ns" --ignore-not-found
 done
-
-pkill -f "port-forward" 2>/dev/null || true
 ```
 
 ## Key Takeaways
 
-HTTPRoute `matches` combine path + headers + queryParams + method (AND within one match object, OR across multiple). Header matching is case-insensitive for names, case-sensitive for values by default. Traffic splitting via `backendRefs[].weight`. Filters (RequestHeaderModifier, RequestRedirect, URLRewrite, ResponseHeaderModifier) execute in list order; a RequestRedirect is terminal. `URLRewrite` supports `ReplacePrefixMatch` and `ReplaceFullPath`. NGINX Gateway Fabric v2.5.1 and Envoy Gateway v1.7.2 both implement this surface; the same YAML works under both.
+HTTPRoute `matches` combine path + headers + queryParams + method (AND within one match object, OR across multiple). Header matching is case-insensitive for names, case-sensitive for values by default. Traffic splitting via `backendRefs[].weight`. Filters (RequestHeaderModifier, RequestRedirect, URLRewrite, ResponseHeaderModifier) execute in list order; a RequestRedirect is terminal. `URLRewrite` supports `ReplacePrefixMatch` and `ReplaceFullPath`. NGINX Gateway Fabric v2.5.1 and Envoy Gateway both implement this surface; the same YAML works under both. Both implementations set `externalTrafficPolicy: Local`; use `gateway.networking.k8s.io/gateway-name=<gw-name>` to find the NGF data-plane pod's node, then target that node's IP and the Service NodePort.
