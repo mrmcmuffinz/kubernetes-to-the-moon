@@ -72,6 +72,29 @@ Read the Common Mistakes sections from these assignment answer keys (just read, 
 
 Look for mistakes you've personally made this week and flag them mentally.
 
+## Block D: Killercoda Scenario Mapping (Optional, 1-2 hours if energy permits)
+
+If you finish Blocks A-C and still have energy before 6 PM, run through 2-3 killercoda scenarios that align with your retake weak spots. These are timed, multi-step scenarios that simulate exam pressure.
+
+**Recommended scenarios (pick 2-3 max):**
+
+Storage domain (targets Q13 volumeMount pattern):
+- [ ] **StorageClass and Dynamic Provisioning** - Reinforces PVC/PV patterns
+- [ ] **Volume Can't Be Mounted** - Troubleshooting volume issues
+
+Troubleshooting domain (targets Q9 component restart + general troubleshooting):
+- [ ] **Components Misconfigured** - Fix misconfigured cluster components
+- [ ] **Apiserver Misconfigured** - Fix a misconfigured kube-apiserver
+
+Cluster Architecture domain (targets Q16/Q17 api-resources and CRDs):
+- [ ] **Operator Setup and CRD** - Fix operator RBAC and install a CRD
+- [ ] **Static Pod Move** - Move a static Pod to another node (reinforces static pod path knowledge)
+
+**Rules:**
+- Time-box each scenario to 30 minutes max
+- If stuck, move on (no deep debugging, this is pattern recognition practice)
+- Stop by 6 PM regardless of completion
+
 ## Evening: Stop Studying by 6 PM
 
 After the review above, **no more studying today**. 

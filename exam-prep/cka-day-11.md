@@ -36,6 +36,23 @@ Just verify you can find key pages quickly (you won't study them, just confirm n
 
 **Important:** Don't read the documentation, just verify you know where it lives. Close the browser after this check.
 
+### Optional: One Killercoda Scenario (30 minutes max, morning only)
+
+If you want one final confidence check in a real exam-like environment, run **one** killercoda scenario this morning only. Stop by noon regardless.
+
+**Recommended final scenarios (pick ONE max):**
+
+Multi-step integration scenarios that feel most exam-like:
+- [ ] **Cluster Setup and Node Join** - Setup a Kubeadm cluster, join a node and install a CNI (most comprehensive)
+- [ ] **Components Misconfigured** - Fix misconfigured cluster components (troubleshooting practice)
+- [ ] **RBAC User Permissions** - Control User permissions using RBAC (clean, focused scope)
+
+**Rules:**
+- Morning only (before noon)
+- 30 minutes max
+- If stuck, that's fine (this is confidence, not learning)
+- **No scenarios after noon** - rest of day is logistics and rest only
+
 ## Afternoon/Evening: No Studying
 
 **What to do instead:**
