@@ -10,7 +10,7 @@
 
 Adds the optional cluster services on top of the working two-node cluster: CoreDNS for DNS resolution, Helm because the Mumshad course uses it in S12, local-path-provisioner for PVCs, metrics-server for `kubectl top` and HPA, and optionally MetalLB so that `LoadBalancer`-type Services get IPs you can actually reach from the host.
 
-Run all commands from `node1` unless noted.
+Run all commands from `controlplane-1` unless noted.
 
 ## What Is Different from the Single-Node Guide
 
@@ -21,10 +21,10 @@ Run all commands from `node1` unless noted.
 
 ## Prerequisites
 
-Document 06 complete. Cross-node pod traffic works. Both nodes are `Ready` and untainted. Run from `node1`:
+Document 06 complete. Cross-node pod traffic works. Both nodes are `Ready` and untainted. Run from `controlplane-1`:
 
 ```bash
-ssh node1
+ssh controlplane-1
 kubectl get nodes
 ```
 
@@ -113,11 +113,11 @@ kind: Pod
 metadata:
   name: smoke-pvc-pod
 spec:
-  nodeName: node2          # force to node2
+  nodeName: nodes-1          # force to nodes-1
   containers:
     - name: app
       image: busybox:1.36
-      command: ["sh", "-c", "echo hello-from-node2 > /data/test && sleep 600"]
+      command: ["sh", "-c", "echo hello-from-nodes-1 > /data/test && sleep 600"]
       volumeMounts:
         - name: data
           mountPath: /data
@@ -128,24 +128,24 @@ spec:
 EOF
 
 kubectl wait --for=condition=Ready pod/smoke-pvc-pod --timeout=60s
-kubectl exec smoke-pvc-pod -- cat /data/test    # hello-from-node2
+kubectl exec smoke-pvc-pod -- cat /data/test    # hello-from-nodes-1
 
-# The volume should physically exist on node2
-ssh node2 'sudo ls /opt/local-path-provisioner/'
+# The volume should physically exist on nodes-1
+ssh nodes-1 'sudo ls /opt/local-path-provisioner/'
 
 # Cleanup
 kubectl delete pod smoke-pvc-pod
 kubectl delete pvc smoke-pvc
 ```
 
-The `WaitForFirstConsumer` binding mode means the PV is provisioned where the pod lands. With two nodes, this becomes meaningful: a PVC scheduled to `node2` gets storage on `node2`, not `node1`.
+The `WaitForFirstConsumer` binding mode means the PV is provisioned where the pod lands. With two nodes, this becomes meaningful: a PVC scheduled to `nodes-1` gets storage on `nodes-1`, not `controlplane-1`.
 
 ---
 
 ## Part 3: metrics-server
 
 ```bash
-kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.8.1/components.yaml
 
 # Add the lab-only insecure flag
 kubectl -n kube-system patch deployment metrics-server --type=json -p='[
@@ -217,10 +217,10 @@ kubectl get svc lb-test
 LB_IP=$(kubectl get svc lb-test -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 echo "LoadBalancer IP: $LB_IP"
 
-# From the host (exit out of node1 first)
+# From the host (exit out of controlplane-1 first)
 exit
 curl http://${LB_IP}/    # should return nginx welcome
-ssh node1
+ssh controlplane-1
 
 # Cleanup
 kubectl delete deployment lb-test
@@ -268,13 +268,13 @@ The two-node, from-scratch, systemd-managed cluster is complete:
 
 | Layer | Components | Where |
 |-------|-----------|-------|
-| Control plane | etcd, kube-apiserver, kube-controller-manager, kube-scheduler | `node1` only, systemd |
+| Control plane | etcd, kube-apiserver, kube-controller-manager, kube-scheduler | `controlplane-1` only, systemd |
 | Worker | containerd, kubelet, kube-proxy | both nodes, systemd |
 | Pod networking | bridge CNI per node + manual host routes | both nodes |
 | DNS | CoreDNS (2 replicas, ClusterIP `10.96.0.10`) | scheduled on either node |
 | Storage | local-path-provisioner (default StorageClass) | provisions on the consumer's node |
 | Metrics | metrics-server | scheduled on either node |
 | LoadBalancer | MetalLB (`192.168.122.100-110` pool, L2 mode) | optional, host-reachable |
-| Helm | Helm v3 client | on `node1` |
+| Helm | Helm v3 client | on `controlplane-1` |
 
 The cluster is ready for any CKA scenario in the Mumshad course that does not specifically require `kubeadm` operations. For `kubeadm` lifecycle scenarios (`kubeadm init`, `join`, `upgrade`, `reset`, certificate renewal via `kubeadm certs`), use the `cka/vm/two-kubeadm` guide.

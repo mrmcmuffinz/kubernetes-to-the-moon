@@ -1,0 +1,462 @@
+# VLAN Host Network Setup
+
+**Purpose:** Configure the UniFi network and the QEMU host's Linux bridge so that lab VMs sit on an isolated VLAN away from the home LAN. This document is the prerequisite for all multi-node QEMU guides (`two-kubeadm`, `three-kubeadm`, `ha-kubeadm`).
+
+---
+
+## Network Design
+
+| VLAN | Name | Subnet | Gateway (UCG-Fiber) | Used By |
+|------|------|--------|---------------------|---------|
+| 100 | Lab-VMs | `192.168.100.0/24` | `192.168.100.1` | All QEMU/KVM virtual machines |
+| 200 | Lab-Pi | `192.168.200.0/24` | `192.168.200.1` | Raspberry Pi kubeadm cluster |
+
+Home LAN (`192.168.2.0/24`) is unchanged. Lab VMs can reach the internet via the UCG-Fiber's VLAN routing. VMs cannot see home LAN devices at L2 (separate broadcast domain), which prevents IP and DHCP conflicts.
+
+---
+
+## Part 1: UCG-Fiber -- Create Lab Networks
+
+These steps run in the **UniFi Network** web UI (or app). The UCG-Fiber acts as the gateway and routes traffic for both lab VLANs.
+
+### Create Lab-VMs Network (VLAN 100)
+
+1. Settings → Networks → **Create New Network**
+2. Fill in:
+   - **Name:** `Lab-VMs`
+   - **Purpose:** Corporate
+   - **VLAN ID:** `100`
+   - **Gateway IP/Subnet:** `192.168.100.1/24`
+   - **DHCP Mode:** Disabled (VMs use static IPs set in cloud-init)
+3. Save.
+
+### Create Lab-Pi Network (VLAN 200)
+
+1. Settings → Networks → **Create New Network**
+2. Fill in:
+   - **Name:** `Lab-Pi`
+   - **Purpose:** Corporate
+   - **VLAN ID:** `200`
+   - **Gateway IP/Subnet:** `192.168.200.1/24`
+   - **DHCP Mode:** Disabled (Pis use static IPs set in Netplan)
+3. Save.
+
+**Verification:** After saving, both networks should appear in the Networks list with their VLAN IDs. You can verify the UCG-Fiber has acquired the gateway IPs by checking Settings → Networks and confirming the subnets show as "Active."
+
+---
+
+## Part 2: US-24 -- Configure Port Profiles and Assign Ports
+
+These steps run in **UniFi Network** under the US-24 switch device.
+
+### Create Port Profiles
+
+1. Devices → Select the US-24 → **Port Manager** (or Profiles tab in older UI)
+2. Create profile **"Lab-VM-Trunk"**:
+   - Native VLAN: `Default` (your home LAN, carries untagged home LAN traffic)
+   - **Tagged VLAN Management:** set to `Custom` (the default is `Block All`, which hides the tagged VLAN selector and silently drops all tagged traffic)
+   - Tagged VLANs: `Lab-VMs` (VLAN 100)
+   - Purpose: The QEMU host port carries both home LAN traffic (untagged) and VLAN 100 traffic (tagged)
+
+   **Common mistake:** Selecting the port profile automatically populates the Native VLAN field. If it auto-fills to `Lab-VMs` (VLAN 100) instead of `Default`, change it back to `Default`. With Native VLAN = Lab-VMs, the switch strips the VLAN 100 tag on frames sent to the host, and the Linux VLAN subinterface (`enp6s0f3.100`) silently discards them because it only accepts tagged frames. The symptom is ARP for the gateway completes on the physical NIC but stays `INCOMPLETE` in the kernel ARP table.
+
+3. Create profile **"Lab-Pi-Access"**:
+   - Native VLAN: `Lab-Pi` (VLAN 200)
+   - Tagged VLAN Management: `Block All` (correct for access ports; Pi nodes expect untagged frames)
+   - Tagged VLANs: (none)
+   - Purpose: Pi nodes connect as plain access-port clients; they receive only VLAN 200 frames with no 802.1Q tag
+
+4. Create profile **"Lab-Pi-Trunk"**:
+   - Native VLAN: `Default` (VLAN 1)
+   - **Tagged VLAN Management:** set to `Custom`
+   - Tagged VLANs: `Lab-Pi` (VLAN 200)
+   - Purpose: The host port for the dedicated Pi VLAN NIC (`enp6s0f0`) carries tagged VLAN 200 frames. The Linux VLAN subinterface (`enp6s0f0.200`) strips the tag.
+
+> **Critical:** `Lab-Pi-Trunk` and `Lab-Pi-Access` have opposite Native VLAN settings and must never be swapped. The host NIC (`enp6s0f0`) uses tagged frames and needs Native VLAN = Default. Pi devices use untagged frames and need Native VLAN = Lab-Pi (VLAN 200). Applying the same profile to both port types is the most common setup mistake -- see the Troubleshooting section for the failure mode.
+
+### Assign Profiles to Ports
+
+In the US-24 port manager, assign:
+
+| Port | Device | Profile |
+|------|--------|---------|
+| (QEMU host port) | Desktop / workstation running QEMU (`enp6s0f3`) | `Lab-VM-Trunk` |
+| (Pi VLAN host port) | Same host, dedicated Pi VLAN NIC (`enp6s0f0`) | `Lab-Pi-Trunk` |
+| (Pi port 1) | `pi-cp` (control plane) | `Lab-Pi-Access` |
+| (Pi port 2) | `pi-w1` (worker 1) | `Lab-Pi-Access` |
+| (Pi port 3) | `pi-w2` (worker 2) | `Lab-Pi-Access` |
+
+Save the port assignments.
+
+**Verification:** In the port manager, confirm each port shows the correct profile. The Pi VLAN host port should show VLAN 200 as a tagged VLAN. Pi device ports should show VLAN 200 as the native VLAN.
+
+---
+
+## Part 3: QEMU Host -- VLAN Subinterface and Bridge
+
+These steps run on the host machine (Ubuntu 24.04) that runs the QEMU/KVM VMs. The host port on the US-24 is now in trunk mode (carries native home LAN VLAN untagged plus VLAN 100 tagged). These steps create a VLAN 100 subinterface and a bridge for VMs to attach to.
+
+This document runs on the host, not inside any VM.
+
+### Step 1: Identify the Trunk NIC
+
+You need to know which NIC will carry VLAN 100 tagged traffic to the US-24. Two common layouts:
+
+**Layout A — Single NIC (home LAN + VLAN trunk on same port):**
+The host has one wired NIC. Home LAN traffic arrives untagged; VLAN 100 traffic arrives tagged. The trunk NIC is the one with your home LAN IP.
+
+```bash
+ip -brief addr show | grep -v '^lo\|LOOPBACK'
+# The NIC with your home LAN IP (e.g. eno1 at 192.168.2.x) is the trunk NIC.
+```
+
+**Layout B — Dedicated NIC (separate port for VMs):**
+The host has a secondary or quad-port NIC dedicated to VM traffic. The home LAN NIC (`eno1`) keeps its IP. The VM trunk NIC has no IP and connects to a separate US-24 port with the Lab-VM-Trunk profile.
+
+```bash
+ip -brief addr show
+# Find the NIC with no IP that is connected to the Lab-VM-Trunk switch port.
+# Example: enp6s0f3 (part of a quad-port PCIe card)
+```
+
+Substitute the correct NIC name for `<NIC>` in all commands below.
+
+### Step 2: Install Prerequisites
+
+```bash
+sudo apt update
+sudo apt install -y bridge-utils
+```
+
+### Step 3: Add VLAN Subinterface and Bridge to Netplan
+
+**Check whether you have an existing Netplan file that already defines your NIC:**
+
+```bash
+grep -rl "<NIC>" /etc/netplan/
+```
+
+**Case 1 — No existing file defines `<NIC>` (or you are using Layout A with a fresh config):**
+
+Create a new Netplan file:
+
+```bash
+sudo tee /etc/netplan/10-br-vm.yaml > /dev/null <<'EOF'
+network:
+  version: 2
+  renderer: NetworkManager
+  vlans:
+    <NIC>.100:
+      id: 100
+      link: <NIC>
+      dhcp4: false
+      dhcp6: false
+      link-local: []
+      accept-ra: false
+  bridges:
+    br-vm:
+      dhcp4: false
+      dhcp6: false
+      link-local: []
+      interfaces:
+        - <NIC>.100
+      addresses:
+        - 192.168.100.2/24
+      parameters:
+        stp: false
+        forward-delay: 0
+      optional: true
+EOF
+sudo chmod 600 /etc/netplan/10-br-vm.yaml
+```
+
+**Case 2 — An existing Netplan file already defines `<NIC>` (Layout B or a comprehensive system config):**
+
+Edit the existing file in place. Add a `vlans:` section and a `br-vm` entry under `bridges:`. Do not add a second `ethernets:` block for `<NIC>` — it is already declared. Example additions (merge into your existing file):
+
+```yaml
+  vlans:
+    <NIC>.100:
+      id: 100
+      link: <NIC>
+      dhcp4: false
+      dhcp6: false
+      link-local: []
+      accept-ra: false
+  bridges:
+    br-vm:
+      dhcp4: false
+      dhcp6: false
+      link-local: []
+      interfaces:
+        - <NIC>.100
+      addresses:
+        - 192.168.100.2/24
+      parameters:
+        stp: false
+        forward-delay: 0
+      optional: true
+```
+
+Notes:
+- `192.168.100.2/24` is the host's IP on the lab VLAN. VMs use `192.168.100.1` (UCG-Fiber) as their gateway, not the host.
+- No default route on `br-vm` — the host's default route stays on its home LAN NIC.
+- `stp: false` and `forward-delay: 0` eliminate the 30-second Spanning Tree delay on TAP attach.
+- `optional: true` prevents the bridge from blocking boot while waiting for VMs.
+- If NetworkManager is not installed (Ubuntu Server minimal), use `renderer: networkd` and run `sudo systemctl enable --now systemd-networkd`.
+
+Apply:
+
+```bash
+sudo netplan apply
+
+# Verify both the VLAN interface and the bridge came up
+ip addr show <NIC>.100
+ip addr show br-vm | grep '192.168.100.2'
+```
+
+Both should show as UP. If `netplan apply` produces errors, run `sudo netplan try` to see them.
+
+### Step 4: Configure qemu-bridge-helper
+
+QEMU includes a setuid helper binary that creates and attaches TAP interfaces for unprivileged users. It checks an allow-list before attaching to a bridge.
+
+**Fresh setup (no prior bridge configuration):**
+
+```bash
+sudo mkdir -p /etc/qemu
+sudo tee /etc/qemu/bridge.conf > /dev/null <<'EOF'
+allow br-vm
+EOF
+sudo chown root:kvm /etc/qemu/bridge.conf
+sudo chmod 0640 /etc/qemu/bridge.conf
+
+# Set the setuid bit (Ubuntu QEMU packages often omit this)
+sudo chmod u+s /usr/lib/qemu/qemu-bridge-helper
+```
+
+**Migrating from an existing bridge (e.g. `br0`):**
+
+The allow-list entry and setuid bit are already in place. Just update the bridge name:
+
+```bash
+sudo sed -i 's/allow br0/allow br-vm/' /etc/qemu/bridge.conf
+```
+
+**Verify:**
+
+```bash
+ls -la /usr/lib/qemu/qemu-bridge-helper
+# Expected: -rwsr-xr-x ... root root
+
+sudo cat /etc/qemu/bridge.conf
+# Expected: allow br-vm
+```
+
+The `s` in `-rwsr-xr-x` is the setuid bit. Without it the helper cannot create TAP interfaces.
+
+### Step 5: Exclude QEMU TAP Interfaces from NetworkManager
+
+QEMU creates TAP interfaces (`tap0`, `tap1`, etc.) dynamically when VMs start and attaches them to `br-vm`. NetworkManager will try to configure them unless told not to.
+
+**Fresh setup:**
+
+```bash
+if systemctl is-active --quiet NetworkManager; then
+  sudo tee /etc/NetworkManager/conf.d/10-unmanaged-tap.conf > /dev/null <<'EOF'
+[keyfile]
+unmanaged-devices=interface-name:tap*
+EOF
+  sudo systemctl reload NetworkManager
+fi
+```
+
+**Migrating from an existing bridge:**
+
+The `10-unmanaged-tap.conf` file is already in place. Reload NetworkManager to pick up any other config changes:
+
+```bash
+sudo systemctl reload NetworkManager
+```
+
+The `if` block is a no-op on systems without NetworkManager.
+
+### Step 6: Verification
+
+```bash
+# VLAN subinterface exists (substitute your NIC name for <NIC>)
+ip link show <NIC>.100
+# Expected: <NIC>.100@<NIC>: <...> state UP
+
+# Bridge exists with the host IP
+ip addr show br-vm | grep '192.168.100.2'
+# Expected: inet 192.168.100.2/24
+
+# VLAN subinterface is a bridge member
+bridge link show
+# Expected: <NIC>.100: <...> master br-vm
+
+# qemu-bridge-helper is setuid
+ls -la /usr/lib/qemu/qemu-bridge-helper | grep '^-rws'
+
+# Bridge is in the allow-list
+sudo cat /etc/qemu/bridge.conf
+# Expected: allow br-vm
+```
+
+All five checks should produce output. If any fail, fix that step before continuing to the VM provisioning document.
+
+### Summary
+
+| Component | Path | Purpose |
+|-----------|------|---------|
+| Netplan config | `/etc/netplan/10-br-vm.yaml` (new) or existing file (in-place edit) | Defines `<NIC>.100` VLAN subinterface and `br-vm` bridge |
+| QEMU helper allow-list | `/etc/qemu/bridge.conf` | Permits unprivileged attach to `br-vm` |
+| QEMU helper binary | `/usr/lib/qemu/qemu-bridge-helper` | setuid root, creates TAP interfaces |
+| NM TAP exclusion | `/etc/NetworkManager/conf.d/10-unmanaged-tap.conf` | Prevents NM from managing QEMU TAP interfaces |
+
+The host is now ready for VM creation. Proceed to the VM provisioning document for whichever cluster topology you are building:
+
+- [two-kubeadm: VM Provisioning](two-kubeadm/02-vm-provisioning.md)
+- [three-kubeadm: VM Provisioning](three-kubeadm/02-vm-provisioning.md)
+- [ha-kubeadm: VM Provisioning](ha-kubeadm/02-vm-provisioning.md)
+
+---
+
+## Part 4: QEMU Host -- VLAN 200 Subinterface for Pi Access
+
+These steps add `192.168.200.2/24` to the host so it can SSH into the Pi nodes and manage the kubeadm cluster directly. No bridge is needed -- the Pis are physical devices on access ports, not VMs that need L2 attachment.
+
+### Why a dedicated NIC
+
+The existing trunk NIC (`enp6s0f3`) carries VLAN 100 and its switch port profile has network isolation enabled, which prevents adding VLAN 200 as an additional tagged VLAN on the same port. The solution is to dedicate a second NIC (`enp6s0f0` on the same quad-port card) to VLAN 200 on a separate switch port.
+
+### Step 1: Create a Lab-Pi-Trunk Port Profile on the US-24
+
+1. Devices → US-24 → Port Manager
+2. Create profile **"Lab-Pi-Trunk"**:
+   - Native VLAN: `Default`
+   - Tagged VLAN Management: `Custom`
+   - Tagged VLANs: `Lab-Pi` (VLAN 200)
+3. Assign this profile to the switch port connected to `enp6s0f0` on the host.
+
+This mirrors the Lab-VM-Trunk profile but carries VLAN 200 instead of VLAN 100.
+
+### Step 2: Add VLAN 200 Subinterface to Netplan
+
+In your existing Netplan file, `enp6s0f0` is already declared as a bare ethernet interface. Keep it that way -- do not add an IP to the physical NIC. Add a `vlans:` entry for `enp6s0f0.200`:
+
+```yaml
+  vlans:
+    enp6s0f0.200:
+      id: 200
+      link: enp6s0f0
+      dhcp4: false
+      dhcp6: false
+      link-local: []
+      accept-ra: false
+      addresses:
+        - 192.168.200.2/24
+```
+
+The `enp6s0f0` ethernet block should remain unchanged (NM passthrough with both `ipv4.method` and `ipv6.method` disabled):
+
+```yaml
+  ethernets:
+    enp6s0f0:
+      dhcp4: false
+      dhcp6: false
+      link-local: []
+      accept-ra: false
+      optional: true
+      networkmanager:
+        passthrough:
+          ipv4.method: "disabled"
+          ipv6.method: "disabled"
+```
+
+Notes:
+- VLAN 200 has no DHCP server -- the static address is required.
+- No default route on `enp6s0f0.200`. The host's default route stays on `eno1`.
+- `192.168.200.2` follows the same convention as `192.168.100.2` on `br-vm`.
+
+### Step 3: Apply and Verify
+
+```bash
+sudo netplan apply
+
+# Verify the subinterface came up with the correct IP
+ip addr show enp6s0f0.200
+# Expected: enp6s0f0.200@enp6s0f0: <...> state UP
+#           inet 192.168.200.2/24
+
+# Verify reachability once Pi nodes are up
+ping -c 2 192.168.200.10   # pi-cp
+ping -c 2 192.168.200.11   # pi-w1
+ping -c 2 192.168.200.12   # pi-w2
+```
+
+---
+
+## Routing and Internet Access
+
+The UCG-Fiber routes traffic for both lab VLANs. VMs set `192.168.100.1` (or `192.168.200.1` for Pi nodes) as their default gateway in their network config. Internet traffic flows VM → br-vm (L2) → VLAN 100 trunk → US-24 → UCG-Fiber → WAN. The host does not perform NAT.
+
+If firewall rules on the UCG-Fiber block internet access from lab VLANs by default (depends on your UniFi configuration), add outbound allow rules in Settings → Firewall & Security → Rules for the Lab-VMs and Lab-Pi networks.
+
+---
+
+## Troubleshooting
+
+### VMs lose network connectivity after `netplan apply`
+
+**Symptom:** After any `netplan apply` run, VMs are unreachable even though the bridge is up. The UCG-Fiber gateway (`192.168.100.1`) still responds on `br-vm` but pinging a VM IP produces 100% packet loss. ARP shows `(incomplete)` for VM IPs. `bridge link show` lists only `enp6s0f3.100` -- the TAP interfaces are gone.
+
+**Cause:** The netplan renderer is NetworkManager. When `netplan apply` regenerates NM connection profiles, NM re-provisions `br-vm` from its stored config. This briefly resets the bridge and reattaches only the members it knows about -- `enp6s0f3.100`, which is defined in the netplan `interfaces:` list. QEMU's TAP interfaces (`tap0`, `tap1`, etc.) are attached to the bridge dynamically at VM startup and are never written into the netplan config. When NM reconstructs the bridge, the kernel clears that dynamic membership. The QEMU processes keep running and hold the TAP file descriptors open, but the TAPs are no longer in the bridge. The `unmanaged-devices=interface-name:tap*` rule in `10-unmanaged-tap.conf` only prevents NM from configuring the TAPs -- it does not protect their bridge membership when the bridge itself is re-provisioned.
+
+**Immediate fix:** Reattach the TAP interfaces to the bridge manually:
+
+```bash
+# Identify how many TAPs exist
+bridge link show
+ip link show type tuntap
+
+# Reattach each TAP (adjust names to match your setup)
+sudo ip link set tap0 master br-vm
+sudo ip link set tap1 master br-vm
+
+# Verify
+bridge link show
+# Expected: enp6s0f3.100, tap0, and tap1 all listed under br-vm
+
+ping -c 2 -I br-vm 192.168.100.10
+# Expected: replies from the VM
+```
+
+ARP entries that showed `(incomplete)` will resolve automatically on the next ping after the TAPs are reattached.
+
+**Prevention:** Do not run `netplan apply` while VMs are running. The safe sequence for any host network change is:
+
+1. Shut down all VMs gracefully.
+2. Run `sudo netplan apply`.
+3. Verify the new network config.
+4. Start VMs back up (QEMU reattaches the TAPs on startup).
+
+---
+
+### Pi unreachable from host but host can ping gateway; or Pi can ping gateway after profile change but host then loses gateway
+
+**Symptom A:** Pi's `eth0` is UP with the correct static IP, default route is set, physical link shows `LOWER_UP`, yet the Pi cannot ping `192.168.200.1` and the host cannot ping the Pi. Both the gateway and the Pi appear unreachable at L2.
+
+**Symptom B:** Changing the port profile on the Pi's switch port fixes the Pi (it can now ping the gateway), but the host immediately loses `192.168.200.1` reachability on `enp6s0f0.200`.
+
+**Cause:** The host port (carrying `enp6s0f0`) and the Pi ports are sharing the same port profile, or the profiles have their Native VLAN settings reversed. The two port types need opposite configurations:
+
+| Port type | Device | Native VLAN | Tagged VLANs |
+|-----------|--------|-------------|--------------|
+| `Lab-Pi-Trunk` | Host `enp6s0f0` | Default (VLAN 1) | Lab-Pi (VLAN 200) |
+| `Lab-Pi-Access` | Pi `eth0` | Lab-Pi (VLAN 200) | None (Block All) |
+
+The host NIC uses a VLAN subinterface (`enp6s0f0.200`) that sends and receives tagged VLAN 200 frames -- it requires Native VLAN = Default so the switch does not strip the tag. Pi devices have no VLAN subinterface -- they send untagged frames that must land on VLAN 200, which requires Native VLAN = Lab-Pi (VLAN 200).
+
+**Fix:** Create two separate profiles with the settings in the table above and assign them to the correct ports. Do not reuse the same profile for both port types. See Part 2 for the full profile creation steps.

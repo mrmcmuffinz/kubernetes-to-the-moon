@@ -133,21 +133,18 @@ EOF
 kubectl wait --for=condition=Ready pods --all -n ex-1-2 --timeout=60s
 ```
 
-**Task:** The web pod cannot reach the api pod. Identify why by examining the policy and pod labels.
+**Task:** The web pod cannot reach the api pod. The configuration has one or more problems. Find and fix whatever is needed so web can reach api.
 
 **Verification:**
 
 ```bash
 API_IP=$(kubectl get pod api -n ex-1-2 -o jsonpath='{.status.podIP}')
 
-# Test shows blocked
+# Before fix - blocked
 timeout 3 kubectl exec -n ex-1-2 web -- wget -qO- --timeout=2 http://$API_IP || echo "BLOCKED"
 
-# Check policy
-kubectl describe networkpolicy api-policy -n ex-1-2
-
-# Check pod labels
-kubectl get pod web -n ex-1-2 --show-labels
+# After fix - should succeed
+kubectl exec -n ex-1-2 web -- wget -qO- --timeout=2 http://$API_IP && echo "ALLOWED"
 ```
 
 ---
@@ -203,19 +200,18 @@ EOF
 kubectl wait --for=condition=Ready pods --all -n ex-1-3 --timeout=60s
 ```
 
-**Task:** The policy should protect the database pod, but it does not. Diagnose why.
+**Task:** The policy should protect the database pod but is not working. The configuration has one or more problems. Find and fix whatever is needed so the database pod is properly protected.
 
 **Verification:**
 
 ```bash
 DB_IP=$(kubectl get pod database -n ex-1-3 -o jsonpath='{.status.podIP}')
 
-# Database is still accessible (policy not applied)
-kubectl exec -n ex-1-3 app -- wget -qO- --timeout=2 http://$DB_IP && echo "Database accessible - policy NOT protecting"
+# Before fix - database is accessible (policy not effective)
+kubectl exec -n ex-1-3 app -- wget -qO- --timeout=2 http://$DB_IP && echo "Before fix: accessible"
 
-# Check why
-kubectl get pod database -n ex-1-3 --show-labels
-kubectl describe networkpolicy protect-database -n ex-1-3 | grep PodSelector
+# After fix - should be blocked
+timeout 3 kubectl exec -n ex-1-3 app -- wget -qO- --timeout=2 http://$DB_IP || echo "After fix: BLOCKED"
 ```
 
 ---
@@ -915,7 +911,7 @@ DB_IP=$(kubectl get pod db -n ex-4-3-db -o jsonpath='{.status.podIP}')
 kubectl exec -n ex-4-3-web web -- wget -qO- --timeout=2 http://$API_IP && echo "web->api: OK"
 
 # api -> db
-kubectl exec -n ex-4-3-api api -- wget -qO- --timeout=2 http://$DB_IP && echo "api->db: OK"
+kubectl exec -n ex-4-3-api api -- curl -sf --connect-timeout 2 http://$DB_IP && echo "api->db: OK"
 ```
 
 ---

@@ -46,7 +46,7 @@ localAPIEndpoint:
   advertiseAddress: 10.0.2.15
   bindPort: 6443
 nodeRegistration:
-  name: node1
+  name: controlplane-1
   criSocket: unix:///run/containerd/containerd.sock
 ---
 apiVersion: kubeadm.k8s.io/v1beta4
@@ -66,7 +66,7 @@ apiServer:
     - 10.0.2.15
     - 127.0.0.1
     - localhost
-    - node1
+    - controlplane-1
 controllerManager: {}
 scheduler: {}
 ---
@@ -113,7 +113,7 @@ kubectl cluster-info
 kubectl get nodes
 ```
 
-`kubectl get nodes` should show `node1` with status `NotReady` and role `control-plane`. `NotReady` is expected at this stage: there is no CNI yet, so kubelet refuses to mark the node Ready. Document 03 fixes that.
+`kubectl get nodes` should show `controlplane-1` with status `NotReady` and role `control-plane`. `NotReady` is expected at this stage: there is no CNI yet, so kubelet refuses to mark the node Ready. Document 03 fixes that.
 
 ## Part 4: Remove the Control Plane Taint
 
@@ -121,13 +121,13 @@ By default, `kubeadm init` taints the control plane node with `node-role.kuberne
 
 ```bash
 # Check current taints
-kubectl describe node node1 | grep -i taint
+kubectl describe node controlplane-1 | grep -i taint
 
 # Remove the control-plane NoSchedule taint
-kubectl taint nodes node1 node-role.kubernetes.io/control-plane:NoSchedule-
+kubectl taint nodes controlplane-1 node-role.kubernetes.io/control-plane:NoSchedule-
 
 # Verify
-kubectl describe node node1 | grep -i taint
+kubectl describe node controlplane-1 | grep -i taint
 # Expected: Taints: <none>
 ```
 
@@ -135,7 +135,7 @@ The CKA exam tests both directions of this taint syntax, so it is worth knowing 
 
 ```bash
 # To put the taint back later (for practice):
-kubectl taint nodes node1 node-role.kubernetes.io/control-plane=:NoSchedule
+kubectl taint nodes controlplane-1 node-role.kubernetes.io/control-plane=:NoSchedule
 ```
 
 ## Part 5: Copy admin.conf to the Host
@@ -164,17 +164,35 @@ The `127.0.0.1` SAN you added in Part 1 is what makes this work. Without it, the
 
 ## Part 6: Verify Control Plane Components
 
-All four control plane components run as static pods in the `kube-system` namespace, defined by manifests in `/etc/kubernetes/manifests/`. kubelet watches that directory and creates a pod for each file.
+The four static-pod control plane components are defined by manifests in `/etc/kubernetes/manifests/`. kubelet watches that directory and creates a pod for each file. CoreDNS and kube-proxy are also installed by `kubeadm init`, but they are not static pods.
 
 ```bash
-# Static pod manifests
+# Static pod manifests (etcd and the three apiserver-side components only)
 sudo ls -la /etc/kubernetes/manifests/
-# Should list: etcd.yaml, kube-apiserver.yaml,
-#              kube-controller-manager.yaml, kube-scheduler.yaml
+# Expected: etcd.yaml  kube-apiserver.yaml
+#           kube-controller-manager.yaml  kube-scheduler.yaml
+# CoreDNS is not here -- it runs as a Deployment, not a static pod.
 
-# Static pods running
+# All pods in kube-system
 kubectl -n kube-system get pods -o wide
+```
 
+Expected output after `kubeadm init` but before CNI is installed:
+
+```
+NAME                                      READY   STATUS    ...
+coredns-<hash>-<hash>                     0/1     Pending   ...  ← Pending: no CNI yet
+coredns-<hash>-<hash>                     0/1     Pending   ...  ← Pending: no CNI yet
+etcd-controlplane-1                       1/1     Running   ...
+kube-apiserver-controlplane-1             1/1     Running   ...
+kube-controller-manager-controlplane-1    1/1     Running   ...
+kube-proxy-<hash>                         0/1     Pending   ...  ← Pending: no CNI yet
+kube-scheduler-controlplane-1             1/1     Running   ...
+```
+
+CoreDNS and kube-proxy are installed by kubeadm as a Deployment and DaemonSet respectively. Their images were pre-pulled in document 01. They stay Pending until Calico provides pod networking in document 03.
+
+```bash
 # Component health endpoints
 curl -k https://127.0.0.1:6443/healthz
 curl -k https://127.0.0.1:10257/healthz   # controller-manager
@@ -188,7 +206,7 @@ sudo ETCDCTL_API=3 etcdctl endpoint health \
   --key=/etc/kubernetes/pki/etcd/server.key
 ```
 
-All four endpoints should return success.
+All four endpoints should return success. The four static pods are `Running`; CoreDNS and kube-proxy being `Pending` at this stage is correct.
 
 ## Part 7: Inspect What kubeadm Built
 
@@ -235,13 +253,19 @@ This is the most useful thing about doing the manual build first: when something
 
 ## Summary
 
-The control plane is up and reachable, and the node is ready to schedule pods (after the CNI is installed):
+The control plane is up and reachable. Static pods are `Running`; CoreDNS and kube-proxy are `Pending` until Calico is installed in the next document:
 
-| Component | Manifest | Health Endpoint |
-|-----------|----------|-----------------|
-| etcd | `/etc/kubernetes/manifests/etcd.yaml` | `etcdctl endpoint health` |
-| kube-apiserver | `/etc/kubernetes/manifests/kube-apiserver.yaml` | `https://127.0.0.1:6443/healthz` |
-| kube-controller-manager | `/etc/kubernetes/manifests/kube-controller-manager.yaml` | `https://127.0.0.1:10257/healthz` |
-| kube-scheduler | `/etc/kubernetes/manifests/kube-scheduler.yaml` | `https://127.0.0.1:10259/healthz` |
+| Component | How Managed | Status |
+|-----------|-------------|--------|
+| etcd | Static pod (`/etc/kubernetes/manifests/etcd.yaml`) | Running |
+| kube-apiserver | Static pod (`/etc/kubernetes/manifests/kube-apiserver.yaml`) | Running |
+| kube-controller-manager | Static pod (`/etc/kubernetes/manifests/kube-controller-manager.yaml`) | Running |
+| kube-scheduler | Static pod (`/etc/kubernetes/manifests/kube-scheduler.yaml`) | Running |
+| kube-proxy | DaemonSet (installed by kubeadm) | Pending (no CNI) |
+| CoreDNS | Deployment (installed by kubeadm) | Pending (no CNI) |
 
-`kubectl get nodes` shows `node1` as `NotReady`. The next document installs Calico to make the node `Ready` and enable pod networking.
+`kubectl get nodes` shows `controlplane-1` as `NotReady`. The next document installs Calico to make the node `Ready` and move CoreDNS and kube-proxy to `Running`.
+
+---
+
+← [Previous: Installing Container Runtime and kubeadm Toolchain (Single Node)](01-node-prerequisites.md) | [Next: Installing Calico as the Cluster CNI (Single Node) →](03-cni-installation.md)

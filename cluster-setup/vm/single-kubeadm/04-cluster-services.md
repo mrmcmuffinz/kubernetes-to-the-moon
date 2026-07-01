@@ -20,7 +20,7 @@ CoreDNS is already running in `kube-system` because `kubeadm init` deployed it. 
 
 ## Prerequisites
 
-`node1` is `Ready` with Calico installed. `kubectl` is configured.
+`controlplane-1` is `Ready` with Calico installed. `kubectl` is configured.
 
 ---
 
@@ -125,7 +125,7 @@ helm uninstall hello
 ### Step 1: Install
 
 ```bash
-kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.8.1/components.yaml
 ```
 
 ### Step 2: Add the Insecure-TLS Flag for Lab Use
@@ -204,3 +204,7 @@ The single-node `kubeadm` cluster is now complete:
 | Helm | Helm v3 | Installed |
 
 You can now deploy workloads, create Services, use PersistentVolumeClaims, and manage the cluster with `kubectl` from inside the VM or from the host through the port-forwarded 6443.
+
+---
+
+← [Previous: Installing Calico as the Cluster CNI (Single Node)](03-cni-installation.md)

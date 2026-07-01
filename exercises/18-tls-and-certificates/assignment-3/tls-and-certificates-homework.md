@@ -266,6 +266,60 @@ echo "SUCCESS"
 
 ---
 
+### Exercise 4.4
+
+**Objective:** Inspect kubelet client and server certificates and document their distinct roles.
+
+**Setup:**
+```bash
+kubectl create namespace ex-4-4
+```
+
+**Task:** The kubelet on a worker node uses two distinct certificates: a client certificate for outbound connections to the API server, and a server certificate for inbound connections (kubectl exec, kubectl logs). On a kind cluster worker node, locate both certificates in `/var/lib/kubelet/pki/`, extract the Issuer and Extended Key Usage for each, and write the information to `/tmp/kubelet-cert-info.txt` in the format:
+
+```
+Client Certificate:
+  Path: <path>
+  Issuer: <issuer>
+  Extended Key Usage: <usage>
+
+Server Certificate:
+  Path: <path>
+  Issuer: <issuer>
+  Extended Key Usage: <usage>
+```
+
+**Verification:**
+```bash
+# Check that both certificates were inspected
+grep -q "Client Certificate" /tmp/kubelet-cert-info.txt
+# Expected: exit 0
+
+grep -q "Server Certificate" /tmp/kubelet-cert-info.txt
+# Expected: exit 0
+
+grep -q "/var/lib/kubelet/pki/kubelet-client-current.pem" /tmp/kubelet-cert-info.txt
+# Expected: exit 0 (client cert path)
+
+grep -q "/var/lib/kubelet/pki/kubelet.crt" /tmp/kubelet-cert-info.txt
+# Expected: exit 0 (server cert path)
+
+grep -q "CN.*kubernetes" /tmp/kubelet-cert-info.txt
+# Expected: exit 0 (client cert issued by cluster CA)
+
+grep -i "TLS Web Client Authentication" /tmp/kubelet-cert-info.txt
+# Expected: exit 0 (client cert usage)
+
+grep -i "TLS Web Server Authentication" /tmp/kubelet-cert-info.txt
+# Expected: exit 0 (server cert usage)
+
+# Verify understanding: Client cert Issuer should be cluster CA (CN=kubernetes)
+# Server cert Issuer should be node-local CA (CN contains node hostname)
+cat /tmp/kubelet-cert-info.txt
+```
+
+---
+
 ## Level 5: Complex Scenarios
 
 ### Exercise 5.1

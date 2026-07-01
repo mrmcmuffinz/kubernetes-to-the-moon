@@ -1,8 +1,31 @@
 # Gateway API Fundamentals Homework
 
-Fifteen exercises covering Envoy Gateway v1.7.2, Gateway/HTTPRoute creation, `parentRefs`, `hostnames`, path matching, `allowedRoutes`, `ReferenceGrant`, and reading `status.conditions`. Assumes Envoy Gateway is installed in `envoy-gateway-system` and the Gateway API CRDs (v1.5.1) are in place. Maintain a `kubectl port-forward` to the relevant Envoy data-plane Service on localhost:8090 for verification.
+Fifteen exercises covering Envoy Gateway v1.7.2, Gateway/HTTPRoute creation, `parentRefs`, `hostnames`, path matching, `allowedRoutes`, `ReferenceGrant`, and reading `status.conditions`. Assumes Envoy Gateway is installed in `envoy-gateway-system` and the Gateway API CRDs (v1.5.1) are in place.
 
 Exercise namespaces follow `ex-<level>-<exercise>` for HTTPRoutes and `ex-<level>-<exercise>-gw` for Gateway-owning namespaces when needed.
+
+## Data-plane connectivity
+
+Each Gateway provisions a dedicated Envoy data-plane Service of type NodePort in `envoy-gateway-system` with `externalTrafficPolicy: Local`. Two methods reach it for traffic verification.
+
+**Port-forward** tunnels through the Kubernetes API server and works from any machine with cluster access regardless of node networking. This is the default method shown in each verification block.
+
+**NodePort direct** requires no tunnel but `externalTrafficPolicy: Local` means the request must go to the specific node where the Envoy pod is scheduled, not any node. Discover the correct address with:
+
+```bash
+NS=<gateway-owning-namespace>
+NODE=$(kubectl get pods -n envoy-gateway-system \
+  -l gateway.envoyproxy.io/owning-gateway-namespace=$NS \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NODEIP=$(kubectl get node $NODE \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NODEPORT=$(kubectl get svc -n envoy-gateway-system \
+  -l gateway.envoyproxy.io/owning-gateway-namespace=$NS \
+  -o jsonpath='{.items[0].spec.ports[0].nodePort}')
+echo "$NODEIP:$NODEPORT"
+```
+
+Both methods are shown in each verification block that tests traffic. For exercises where the Gateway lives in a separate namespace from the HTTPRoute (for example `ex-4-1-infra`), use the Gateway's namespace as `$NS`.
 
 ---
 
@@ -191,6 +214,17 @@ curl -sI -H "Host: paths.example.test" http://localhost:8090/c
 # Expected: 404
 
 pkill -f "port-forward.*$SVC" 2>/dev/null
+
+# NodePort alternative (externalTrafficPolicy: Local — must hit the node running the Envoy pod):
+NODE=$(kubectl get pods -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-2-1 -o jsonpath='{.items[0].spec.nodeName}')
+NODEIP=$(kubectl get node $NODE -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NODEPORT=$(kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-2-1 -o jsonpath='{.items[0].spec.ports[0].nodePort}')
+curl -s -H "Host: paths.example.test" http://$NODEIP:$NODEPORT/a
+# Expected: A-backend
+curl -s -H "Host: paths.example.test" http://$NODEIP:$NODEPORT/b
+# Expected: B-backend
+curl -sI -H "Host: paths.example.test" http://$NODEIP:$NODEPORT/c
+# Expected: 404
 ```
 
 ---
@@ -279,6 +313,15 @@ curl -s -H "Host: blue.example.test" http://localhost:8091/
 # Expected: blue-app
 
 pkill -f "port-forward.*$SVC" 2>/dev/null
+
+# NodePort alternative:
+NODE=$(kubectl get pods -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-2-2 -o jsonpath='{.items[0].spec.nodeName}')
+NODEIP=$(kubectl get node $NODE -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NODEPORT=$(kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-2-2 -o jsonpath='{.items[0].spec.ports[0].nodePort}')
+curl -s -H "Host: red.example.test" http://$NODEIP:$NODEPORT/
+# Expected: red-app
+curl -s -H "Host: blue.example.test" http://$NODEIP:$NODEPORT/
+# Expected: blue-app
 ```
 
 ---
@@ -370,6 +413,19 @@ echo "v1: $V1, v2: $V2"
 # Expected: roughly 10/10, each in range [5, 15] allowing for variance
 
 pkill -f "port-forward.*$SVC" 2>/dev/null
+
+# NodePort alternative:
+NODE=$(kubectl get pods -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-2-3 -o jsonpath='{.items[0].spec.nodeName}')
+NODEIP=$(kubectl get node $NODE -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NODEPORT=$(kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-2-3 -o jsonpath='{.items[0].spec.ports[0].nodePort}')
+V1=0; V2=0
+for i in $(seq 1 20); do
+  RESP=$(curl -s -H "Host: split.example.test" http://$NODEIP:$NODEPORT/)
+  [ "$RESP" = "v1-reply" ] && V1=$((V1+1))
+  [ "$RESP" = "v2-reply" ] && V2=$((V2+1))
+done
+echo "v1: $V1, v2: $V2"
+# Expected: roughly 10/10, each in range [5, 15] allowing for variance
 ```
 
 ---
@@ -394,7 +450,6 @@ spec:
   - {name: http, protocol: HTTP, port: 80, allowedRoutes: {namespaces: {from: Same}}}
 EOF
 
-# Deploy the route from a DIFFERENT namespace (not Same)
 kubectl create namespace ex-3-1-other
 kubectl apply -n ex-3-1-other -f - <<'EOF'
 apiVersion: apps/v1
@@ -448,7 +503,7 @@ kubectl get httproute -n ex-3-1-other blocked \
 
 ### Exercise 3.2
 
-**Objective:** An HTTPRoute references a Service that does not exist in the expected port. Diagnose and fix.
+**Objective:** An HTTPRoute shows `ResolvedRefs: False`. Diagnose and fix.
 
 **Setup:**
 
@@ -498,7 +553,7 @@ EOF
 kubectl -n ex-3-2 rollout status deployment/real --timeout=60s
 ```
 
-**Task:** Fix the HTTPRoute so `ResolvedRefs: True` and the route returns `real-backend`.
+**Task:** Fix the HTTPRoute so `ResolvedRefs: True` and traffic reaches the backend.
 
 **Verification:**
 
@@ -514,13 +569,20 @@ sleep 2
 curl -s -H "Host: unresolved.example.test" http://localhost:8093/
 # Expected: real-backend
 pkill -f "port-forward.*$SVC" 2>/dev/null
+
+# NodePort alternative:
+NODE=$(kubectl get pods -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-3-2 -o jsonpath='{.items[0].spec.nodeName}')
+NODEIP=$(kubectl get node $NODE -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NODEPORT=$(kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-3-2 -o jsonpath='{.items[0].spec.ports[0].nodePort}')
+curl -s -H "Host: unresolved.example.test" http://$NODEIP:$NODEPORT/
+# Expected: real-backend
 ```
 
 ---
 
 ### Exercise 3.3
 
-**Objective:** An HTTPRoute points at a Gateway in the wrong namespace. Fix.
+**Objective:** An HTTPRoute shows `Accepted: False`. Find and fix.
 
 **Setup:**
 
@@ -575,7 +637,7 @@ EOF
 kubectl -n ex-3-3 rollout status deployment/q --timeout=60s
 ```
 
-**Task:** The HTTPRoute's `parentRefs` references `shared-gw` without a namespace, so Kubernetes looks in the HTTPRoute's own namespace and does not find it. Fix by adding `namespace: ex-3-3-gw` to the parentRefs.
+**Task:** Fix the HTTPRoute's `parentRefs` so it is accepted by `shared-gw`.
 
 **Verification:**
 
@@ -618,6 +680,13 @@ sleep 2
 curl -s -H "Host: tenant.example.test" http://localhost:8094/
 # Expected: ok-4-1
 pkill -f "port-forward.*$SVC" 2>/dev/null
+
+# NodePort alternative (Gateway is in ex-4-1-infra):
+NODE=$(kubectl get pods -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-4-1-infra -o jsonpath='{.items[0].spec.nodeName}')
+NODEIP=$(kubectl get node $NODE -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NODEPORT=$(kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-4-1-infra -o jsonpath='{.items[0].spec.ports[0].nodePort}')
+curl -s -H "Host: tenant.example.test" http://$NODEIP:$NODEPORT/
+# Expected: ok-4-1
 ```
 
 ---
@@ -697,6 +766,13 @@ sleep 2
 curl -s -H "Host: xns.example.test" http://localhost:8095/
 # Expected: cross-ns-ok
 pkill -f "port-forward.*$SVC" 2>/dev/null
+
+# NodePort alternative (Gateway is in ex-4-2-gw):
+NODE=$(kubectl get pods -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-4-2-gw -o jsonpath='{.items[0].spec.nodeName}')
+NODEIP=$(kubectl get node $NODE -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NODEPORT=$(kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-4-2-gw -o jsonpath='{.items[0].spec.ports[0].nodePort}')
+curl -s -H "Host: xns.example.test" http://$NODEIP:$NODEPORT/
+# Expected: cross-ns-ok
 ```
 
 ---
@@ -796,7 +872,7 @@ done
 
 ### Exercise 5.2
 
-**Objective:** Diagnose a compound failure with wrong GatewayClass, wrong listener `allowedRoutes`, and cross-namespace reference with no ReferenceGrant. Fix all three.
+**Objective:** Diagnose a compound failure with three issues preventing the HTTPRoute from being accepted and routing traffic. Fix all three.
 
 **Setup:**
 
@@ -855,7 +931,7 @@ spec:
 EOF
 ```
 
-**Task:** Fix so the HTTPRoute has `Accepted: True` and `ResolvedRefs: True`, and traffic flows. Three fixes are needed: GatewayClass `eg`, `allowedRoutes.namespaces.from: All`, and a ReferenceGrant in `ex-5-2-svc` for the route.
+**Task:** Diagnose why the HTTPRoute cannot be accepted and why traffic cannot reach the backend. Apply all necessary fixes so that `Accepted: True`, `ResolvedRefs: True`, and traffic flows.
 
 **Verification:**
 
@@ -871,6 +947,13 @@ sleep 2
 curl -s -H "Host: five-two.example.test" http://localhost:8096/
 # Expected: five-two-ok
 pkill -f "port-forward.*$SVC" 2>/dev/null
+
+# NodePort alternative (Gateway is in ex-5-2-gw):
+NODE=$(kubectl get pods -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-5-2-gw -o jsonpath='{.items[0].spec.nodeName}')
+NODEIP=$(kubectl get node $NODE -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NODEPORT=$(kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-5-2-gw -o jsonpath='{.items[0].spec.ports[0].nodePort}')
+curl -s -H "Host: five-two.example.test" http://$NODEIP:$NODEPORT/
+# Expected: five-two-ok
 ```
 
 ---
@@ -938,6 +1021,13 @@ sleep 2
 curl -s -H "Host: legacy.example.test" http://localhost:8097/api
 # Expected: legacy-api-v1
 pkill -f "port-forward.*$SVC" 2>/dev/null
+
+# NodePort alternative (Gateway is in ex-5-3):
+NODE=$(kubectl get pods -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-5-3 -o jsonpath='{.items[0].spec.nodeName}')
+NODEIP=$(kubectl get node $NODE -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NODEPORT=$(kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-5-3 -o jsonpath='{.items[0].spec.ports[0].nodePort}')
+curl -s -H "Host: legacy.example.test" http://$NODEIP:$NODEPORT/api
+# Expected: legacy-api-v1
 ```
 
 ---

@@ -25,7 +25,7 @@ The systemd runbooks reference paths under `/etc/systemd/system/`, `/etc/etcd/`,
 | `/var/lib/kubernetes/kube-scheduler.kubeconfig` | `/etc/kubernetes/scheduler.conf` |
 | `/var/lib/kubelet/kubelet-config.yaml` | `/var/lib/kubelet/config.yaml` |
 | `/var/lib/kubelet/kubeconfig` | `/etc/kubernetes/kubelet.conf` |
-| `/var/lib/kubelet/node1.pem`, `node1-key.pem` | `/var/lib/kubelet/pki/kubelet-client-current.pem` (auto-rotated) |
+| `/var/lib/kubelet/controlplane-1.pem`, `controlplane-1-key.pem` | `/var/lib/kubelet/pki/kubelet-client-current.pem` (auto-rotated) |
 | `~/auth/admin.kubeconfig` | `/etc/kubernetes/admin.conf` |
 
 Static pods are managed by kubelet, not systemd. Editing a manifest in `/etc/kubernetes/manifests/` causes kubelet to recreate the corresponding pod within seconds. There is no `systemctl restart` for static pod components; kubelet drives their lifecycle automatically.
@@ -345,7 +345,7 @@ sudo apt-mark hold kubeadm
 sudo kubeadm upgrade apply v1.36.0
 
 # Drain
-kubectl drain node1 --ignore-daemonsets --delete-emptydir-data
+kubectl drain controlplane-1 --ignore-daemonsets --delete-emptydir-data
 
 # Upgrade kubelet and kubectl
 sudo apt-mark unhold kubelet kubectl
@@ -355,7 +355,7 @@ sudo systemctl daemon-reload
 sudo systemctl restart kubelet
 
 # Uncordon
-kubectl uncordon node1
+kubectl uncordon controlplane-1
 ```
 
 ### Verify

@@ -6,7 +6,7 @@ NGINX Gateway Fabric is NGINX Inc.'s conformant Gateway API implementation. It t
 
 ## Prerequisites
 
-Complete `exercises/11-11-ingress-and-gateway-api/assignment-3` first and keep Envoy Gateway installed. Gateway API CRDs must be in place (`docs/cluster-setup.md#gateway-api-crds`). Use the multi-node kind cluster from earlier assignments (`docs/cluster-setup.md#multi-node-kind-cluster`).
+Complete `exercises/11-ingress-and-gateway-api/assignment-3` first and keep Envoy Gateway installed. Gateway API CRDs must be in place (`docs/cluster-setup.md#gateway-api-crds`). Use the multi-node kind cluster from earlier assignments (`docs/cluster-setup.md#multi-node-kind-cluster`).
 
 Verify.
 
@@ -31,8 +31,7 @@ Add the chart repository and install.
 ```bash
 helm install ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric \
   --version 2.5.1 \
-  --namespace nginx-gateway --create-namespace \
-  --set service.type=ClusterIP
+  --namespace nginx-gateway --create-namespace
 
 kubectl -n nginx-gateway rollout status deployment/ngf-nginx-gateway-fabric --timeout=180s
 
@@ -65,7 +64,7 @@ sleep 8
 kubectl get gateway -n tutorial-gw-adv
 ```
 
-Both Gateways come up `Programmed: True`. Each has its own data-plane Service in the respective controller's namespace.
+Both Gateways come up `Programmed: True`. Envoy Gateway places its data-plane Service in `envoy-gateway-system`. NGINX Gateway Fabric v2.x places its data-plane Service in the Gateway's own namespace (`tutorial-gw-adv` in this case), not in `nginx-gateway`. The NGF data-plane Service is named `<gateway-name>-nginx`, so the Gateway named `gw-nginx` produces a Service named `gw-nginx-nginx` in `tutorial-gw-adv`. Both implementations set `externalTrafficPolicy: Local` on their data-plane Services, so you must target the specific node running the data-plane pod rather than any arbitrary cluster node.
 
 Deploy a backend and two HTTPRoutes, one per Gateway.
 
@@ -114,22 +113,30 @@ spec:
 EOF
 kubectl -n tutorial-gw-adv rollout status deployment/uni --timeout=60s
 
-# Port-forward to each data plane
-ENVOY_SVC=$(kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=tutorial-gw-adv -o jsonpath='{.items[0].metadata.name}')
-NGINX_SVC=$(kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf -o jsonpath='{.items[0].metadata.name}')
+# Envoy Gateway: externalTrafficPolicy: Local -- target the node running the Envoy pod
+NODE=$(kubectl get pods -n envoy-gateway-system \
+  -l gateway.envoyproxy.io/owning-gateway-namespace=tutorial-gw-adv \
+  -o jsonpath='{.items[0].spec.nodeName}')
+ENVOY_IP=$(kubectl get node "$NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+ENVOY_PORT=$(kubectl get svc -n envoy-gateway-system \
+  -l gateway.envoyproxy.io/owning-gateway-namespace=tutorial-gw-adv \
+  -o jsonpath='{.items[0].spec.ports[0].nodePort}')
 
-kubectl port-forward -n envoy-gateway-system "svc/$ENVOY_SVC" 9080:80 &
-kubectl port-forward -n nginx-gateway "svc/$NGINX_SVC" 9081:80 &
-sleep 3
+# NGF: also externalTrafficPolicy: Local -- target the node running the NGF data-plane pod
+NGF_NODE=$(kubectl get pods -n tutorial-gw-adv \
+  -l gateway.networking.k8s.io/gateway-name=gw-nginx \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n tutorial-gw-adv gw-nginx-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
 
-curl -s -H "Host: uni.example.test" http://localhost:9080/
+curl -s -H "Host: uni.example.test" "http://$ENVOY_IP:$ENVOY_PORT/"
 # Expected (via Envoy): universal-content
 
-curl -s -H "Host: uni.example.test" http://localhost:9081/
+curl -s -H "Host: uni.example.test" "http://$NGINX_IP:$NGINX_PORT/"
 # Expected (via NGINX): universal-content
-
-pkill -f "port-forward.*$ENVOY_SVC" 2>/dev/null
-pkill -f "port-forward.*$NGINX_SVC" 2>/dev/null
 ```
 
 Both controllers serve the same content.
@@ -209,19 +216,14 @@ EOF
 
 kubectl -n tutorial-gw-adv rollout status deployment/svc-a deployment/svc-b --timeout=60s
 
-kubectl port-forward -n nginx-gateway "svc/$NGINX_SVC" 9082:80 &
-sleep 3
-
-curl -s -H "Host: tenants.example.test" -H "X-Tenant: alpha" http://localhost:9082/
+curl -s -H "Host: tenants.example.test" -H "X-Tenant: alpha" "http://$NGINX_IP:$NGINX_PORT/"
 # Expected: tenant-a
 
-curl -s -H "Host: tenants.example.test" -H "X-Tenant: beta" http://localhost:9082/
+curl -s -H "Host: tenants.example.test" -H "X-Tenant: beta" "http://$NGINX_IP:$NGINX_PORT/"
 # Expected: tenant-b
 
-curl -sI -H "Host: tenants.example.test" -H "X-Tenant: gamma" http://localhost:9082/
+curl -sI -H "Host: tenants.example.test" -H "X-Tenant: gamma" "http://$NGINX_IP:$NGINX_PORT/"
 # Expected: 404 (no rule matches)
-
-pkill -f "port-forward.*$NGINX_SVC" 2>/dev/null
 ```
 
 ## Part 4: Query-param matching
@@ -240,17 +242,13 @@ spec:
   - matches: [{queryParams: [{name: version, value: v2}]}]
     backendRefs: [{name: svc-b, port: 80}]
 EOF
-
-kubectl port-forward -n nginx-gateway "svc/$NGINX_SVC" 9083:80 &
 sleep 3
 
-curl -s -H "Host: query.example.test" "http://localhost:9083/?version=v1"
+curl -s -H "Host: query.example.test" "http://$NGINX_IP:$NGINX_PORT/?version=v1"
 # Expected: tenant-a
 
-curl -s -H "Host: query.example.test" "http://localhost:9083/?version=v2"
+curl -s -H "Host: query.example.test" "http://$NGINX_IP:$NGINX_PORT/?version=v2"
 # Expected: tenant-b
-
-pkill -f "port-forward.*$NGINX_SVC" 2>/dev/null
 ```
 
 ## Part 5: Method matching
@@ -269,17 +267,13 @@ spec:
   - matches: [{method: POST}]
     backendRefs: [{name: svc-b, port: 80}]
 EOF
-
-kubectl port-forward -n nginx-gateway "svc/$NGINX_SVC" 9084:80 &
 sleep 3
 
-curl -s -X GET -H "Host: method.example.test" http://localhost:9084/
+curl -s -X GET -H "Host: method.example.test" "http://$NGINX_IP:$NGINX_PORT/"
 # Expected: tenant-a
 
-curl -s -X POST -H "Host: method.example.test" http://localhost:9084/
+curl -s -X POST -H "Host: method.example.test" "http://$NGINX_IP:$NGINX_PORT/"
 # Expected: tenant-b
-
-pkill -f "port-forward.*$NGINX_SVC" 2>/dev/null
 ```
 
 ## Part 6: Traffic splitting
@@ -297,20 +291,16 @@ spec:
     - {name: svc-a, port: 80, weight: 80}
     - {name: svc-b, port: 80, weight: 20}
 EOF
-
-kubectl port-forward -n nginx-gateway "svc/$NGINX_SVC" 9085:80 &
 sleep 3
 
 A=0; B=0
 for i in $(seq 1 40); do
-  resp=$(curl -s -H "Host: split.example.test" http://localhost:9085/)
+  resp=$(curl -s -H "Host: split.example.test" "http://$NGINX_IP:$NGINX_PORT/")
   [ "$resp" = "tenant-a" ] && A=$((A+1))
   [ "$resp" = "tenant-b" ] && B=$((B+1))
 done
 echo "a: $A, b: $B"
 # Expected: roughly 32/8, with variance; a should clearly dominate
-
-pkill -f "port-forward.*$NGINX_SVC" 2>/dev/null
 ```
 
 ## Part 7: Filters
@@ -364,15 +354,11 @@ spec:
         statusCode: 301
     backendRefs: [{name: svc-a, port: 80}]
 EOF
-
-kubectl port-forward -n nginx-gateway "svc/$NGINX_SVC" 9086:80 &
 sleep 3
 
-curl -sI -H "Host: old.example.test" http://localhost:9086/
+curl -sI -H "Host: old.example.test" "http://$NGINX_IP:$NGINX_PORT/"
 # Expected: HTTP/1.1 301 Moved Permanently
 # Expected Location header: https://new.example.test/
-
-pkill -f "port-forward.*$NGINX_SVC" 2>/dev/null
 ```
 
 ### URLRewrite
@@ -428,13 +414,8 @@ EOF
 
 kubectl -n tutorial-gw-adv rollout status deployment/echo --timeout=60s
 
-kubectl port-forward -n nginx-gateway "svc/$NGINX_SVC" 9087:80 &
-sleep 3
-
-curl -s -H "Host: rewrite.example.test" http://localhost:9087/old/items
+curl -s -H "Host: rewrite.example.test" "http://$NGINX_IP:$NGINX_PORT/old/items"
 # Expected: path-seen: /new/items
-
-pkill -f "port-forward.*$NGINX_SVC" 2>/dev/null
 ```
 
 The `URLRewrite` filter with `ReplacePrefixMatch` substitutes the matched path prefix.
@@ -456,22 +437,18 @@ spec:
       headers: [{name: X-API-Key, value: secret}]
     backendRefs: [{name: svc-a, port: 80}]
 EOF
-
-kubectl port-forward -n nginx-gateway "svc/$NGINX_SVC" 9088:80 &
 sleep 3
 
 # All three conditions must match:
-curl -sI -X POST -H "Host: combined.example.test" -H "X-API-Key: secret" http://localhost:9088/api
+curl -sI -X POST -H "Host: combined.example.test" -H "X-API-Key: secret" "http://$NGINX_IP:$NGINX_PORT/api"
 # Expected: 200 OK
 
 # Any condition fails -> no rule match -> 404:
-curl -sI -X GET -H "Host: combined.example.test" -H "X-API-Key: secret" http://localhost:9088/api
+curl -sI -X GET -H "Host: combined.example.test" -H "X-API-Key: secret" "http://$NGINX_IP:$NGINX_PORT/api"
 # Expected: 404 (wrong method)
 
-curl -sI -X POST -H "Host: combined.example.test" http://localhost:9088/api
+curl -sI -X POST -H "Host: combined.example.test" "http://$NGINX_IP:$NGINX_PORT/api"
 # Expected: 404 (missing header)
-
-pkill -f "port-forward.*$NGINX_SVC" 2>/dev/null
 ```
 
 All fields inside a single match object are ANDed. Multiple match objects on one rule are ORed.
@@ -480,7 +457,6 @@ All fields inside a single match object are ANDed. Multiple match objects on one
 
 ```bash
 kubectl delete namespace tutorial-gw-adv
-pkill -f "port-forward" 2>/dev/null || true
 ```
 
 To remove NGINX Gateway Fabric (keep for assignment 5):
@@ -497,9 +473,10 @@ kubectl delete namespace nginx-gateway
 | List GatewayClasses | `kubectl get gatewayclass` |
 | NGINX Gateway Fabric logs | `kubectl logs -n nginx-gateway -l app.kubernetes.io/instance=ngf --tail=50` |
 | Describe an HTTPRoute (all match conditions) | `kubectl describe httproute -n <ns> <name>` |
-| Port-forward to NGINX data plane | `kubectl port-forward -n nginx-gateway svc/<ngf-svc> 9080:80` |
+| Find NGF data-plane pod node | `kubectl get pods -n <gw-ns> -l gateway.networking.k8s.io/gateway-name=<gw-name> -o jsonpath='{.items[0].spec.nodeName}'` |
+| Get NGF data-plane NodePort | `kubectl get svc -n <gw-ns> <gw-name>-nginx -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}'` |
 | Check which parent accepted a route | `kubectl get httproute -n <ns> <name> -o jsonpath='{.status.parents[*]}'` |
 
 ## Key Takeaways
 
-Gateway API's advanced matching (`headers`, `queryParams`, `method`) is all inside `rules[*].matches[*]`. Conditions within one match object are ANDed; multiple match objects within one rule are ORed. Header name matching is case-insensitive; header value matching defaults to `Exact`. Traffic splitting uses `backendRefs[].weight`. Filters (`RequestHeaderModifier`, `RequestRedirect`, `URLRewrite`, `ResponseHeaderModifier`) execute in the order listed. `URLRewrite` with `ReplacePrefixMatch` is the Gateway-API equivalent of Ingress rewrite-target. Running both Envoy Gateway and NGINX Gateway Fabric in the same cluster, with the same HTTPRoute YAML (only `parentRefs` differs), produces identical behavior. NGINX Gateway Fabric v2.5.1 is installed via Helm `oci://ghcr.io/nginx/charts/nginx-gateway-fabric`.
+Gateway API's advanced matching (`headers`, `queryParams`, `method`) is all inside `rules[*].matches[*]`. Conditions within one match object are ANDed; multiple match objects within one rule are ORed. Header name matching is case-insensitive; header value matching defaults to `Exact`. Traffic splitting uses `backendRefs[].weight`. Filters (`RequestHeaderModifier`, `RequestRedirect`, `URLRewrite`, `ResponseHeaderModifier`) execute in the order listed. `URLRewrite` with `ReplacePrefixMatch` is the Gateway-API equivalent of Ingress rewrite-target. Running both Envoy Gateway and NGINX Gateway Fabric in the same cluster, with the same HTTPRoute YAML (only `parentRefs` differs), produces identical behavior. NGINX Gateway Fabric v2.5.1 is installed via Helm `oci://ghcr.io/nginx/charts/nginx-gateway-fabric`. In NGF v2.x, a Gateway named `gw` in namespace `ex-1-1` causes NGF to provision a data-plane Service named `gw-nginx` in `ex-1-1`. Both NGF and Envoy Gateway set `externalTrafficPolicy: Local`; target the node running the data-plane pod using the `gateway.networking.k8s.io/gateway-name` label selector.

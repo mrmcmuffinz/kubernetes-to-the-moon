@@ -8,7 +8,7 @@
 
 ## What This Chapter Does
 
-Creates two headless Ubuntu 24.04 VMs (`node1` and `node2`) attached to the `br0` bridge from the previous document. Each VM gets a static IP via cloud-init, your SSH key, the `kube` user with passwordless sudo, kernel modules and sysctls for Kubernetes, and is rebooted once at the end of cloud-init so all changes take effect cleanly.
+Creates two headless Ubuntu 24.04 VMs (`controlplane-1` and `nodes-1`) attached to the `br0` bridge from the previous document. Each VM gets a static IP via cloud-init, your SSH key, the `kube` user with passwordless sudo, kernel modules and sysctls for Kubernetes, and is rebooted once at the end of cloud-init so all changes take effect cleanly.
 
 The single-node guide used QEMU user-mode networking and a single `create-node.sh` script. This guide uses bridge networking and a `create-cluster.sh` script that wraps `create-node.sh` to provision both VMs in a single command, plus cluster-level `start-cluster.sh` and `stop-cluster.sh`.
 
@@ -60,25 +60,25 @@ The script creates the following layout:
     start-cluster.sh        # Starts both VMs
     stop-cluster.sh         # Stops both VMs cleanly
     destroy-cluster.sh      # Removes per-VM directories (keeps cached image)
-    node1/
-      node1.qcow2           # node1 disk (backed by cloud image)
+    controlplane-1/
+      controlplane-1.qcow2           # controlplane-1 disk (backed by cloud image)
       seed.iso              # Cloud-init ISO
       cloud-init/
         user-data
         meta-data
-      start-node1.sh
-      stop-node1.sh
-    node2/
-      node2.qcow2
+      start-controlplane-1.sh
+      stop-controlplane-1.sh
+    nodes-1/
+      nodes-1.qcow2
       seed.iso
       cloud-init/
         user-data
         meta-data
-      start-node2.sh
-      stop-node2.sh
+      start-nodes-1.sh
+      stop-nodes-1.sh
 ```
 
-The `two-systemd/` parent directory keeps everything separate from the single-node `node1/` if you ever want to run both labs simultaneously.
+The `two-systemd/` parent directory keeps everything separate from the single-node `controlplane-1/` if you ever want to run both labs simultaneously.
 
 ---
 
@@ -91,14 +91,14 @@ Save the following as `~/cka-lab/two-systemd/create-cluster.sh` and make it exec
 #
 # create-cluster.sh
 #
-# Provisions two headless Ubuntu 24.04 VMs (node1, node2) for the two-systemd
+# Provisions two headless Ubuntu 24.04 VMs (controlplane-1, nodes-1) for the two-systemd
 # Kubernetes cluster lab. Both VMs attach to the host bridge br0 from
 # 01-host-bridge-setup.md.
 #
 # Usage:
 #   ./create-cluster.sh           # Create both VMs
-#   ./create-cluster.sh node1     # Create only node1
-#   ./create-cluster.sh node2     # Create only node2
+#   ./create-cluster.sh controlplane-1     # Create only controlplane-1
+#   ./create-cluster.sh nodes-1     # Create only nodes-1
 
 set -euo pipefail
 
@@ -125,8 +125,8 @@ GATEWAY="192.168.122.1"
 
 # Per-node configuration
 declare -A NODES=(
-  [node1]="192.168.122.10"
-  [node2]="192.168.122.11"
+  [controlplane-1]="192.168.122.10"
+  [nodes-1]="192.168.122.11"
 )
 
 # -------------------------------------------------------------------
@@ -265,8 +265,8 @@ write_files:
   - path: /etc/hosts
     content: |
       127.0.0.1 localhost
-      192.168.122.10 node1 node1.cka.local
-      192.168.122.11 node2 node2.cka.local
+      192.168.122.10 controlplane-1 controlplane-1.cka.local
+      192.168.122.11 nodes-1 nodes-1.cka.local
   - path: /etc/netplan/01-static.yaml
     permissions: '0600'
     content: |
@@ -383,13 +383,13 @@ STOPSCRIPT
 # Provision the requested nodes
 # -------------------------------------------------------------------
 if [[ $# -eq 0 ]]; then
-  for n in node1 node2; do
+  for n in controlplane-1 nodes-1; do
     provision_node "$n"
   done
 else
   for n in "$@"; do
     if [[ -z "${NODES[$n]:-}" ]]; then
-      echo "ERROR: Unknown node $n (expected: node1 or node2)"
+      echo "ERROR: Unknown node $n (expected: controlplane-1 or nodes-1)"
       exit 1
     fi
     provision_node "$n"
@@ -403,21 +403,21 @@ cat > "$CLUSTER_DIR/start-cluster.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$SCRIPT_DIR/node1/start-node1.sh"
-"$SCRIPT_DIR/node2/start-node2.sh"
+"$SCRIPT_DIR/controlplane-1/start-controlplane-1.sh"
+"$SCRIPT_DIR/nodes-1/start-nodes-1.sh"
 echo ""
 echo "Both nodes started. First boot takes 60-90 seconds for cloud-init."
 echo "Tail console logs to watch:"
-echo "  tail -f $SCRIPT_DIR/node1/node1-console.log"
-echo "  tail -f $SCRIPT_DIR/node2/node2-console.log"
+echo "  tail -f $SCRIPT_DIR/controlplane-1/controlplane-1-console.log"
+echo "  tail -f $SCRIPT_DIR/nodes-1/nodes-1-console.log"
 EOF
 chmod +x "$CLUSTER_DIR/start-cluster.sh"
 
 cat > "$CLUSTER_DIR/stop-cluster.sh" <<'EOF'
 #!/usr/bin/env bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$SCRIPT_DIR/node2/stop-node2.sh" || true
-"$SCRIPT_DIR/node1/stop-node1.sh" || true
+"$SCRIPT_DIR/nodes-1/stop-nodes-1.sh" || true
+"$SCRIPT_DIR/controlplane-1/stop-controlplane-1.sh" || true
 echo "Both nodes stopped."
 EOF
 chmod +x "$CLUSTER_DIR/stop-cluster.sh"
@@ -426,7 +426,7 @@ cat > "$CLUSTER_DIR/destroy-cluster.sh" <<'EOF'
 #!/usr/bin/env bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 "$SCRIPT_DIR/stop-cluster.sh" 2>/dev/null || true
-rm -rf "$SCRIPT_DIR/node1" "$SCRIPT_DIR/node2"
+rm -rf "$SCRIPT_DIR/controlplane-1" "$SCRIPT_DIR/nodes-1"
 echo "Cluster destroyed. Cached cloud image preserved at ~/cka-lab/images/."
 echo "Rebuild with: $SCRIPT_DIR/create-cluster.sh"
 EOF
@@ -446,16 +446,16 @@ echo "To start both nodes:"
 echo "  $CLUSTER_DIR/start-cluster.sh"
 echo ""
 echo "To watch boot:"
-echo "  tail -f $CLUSTER_DIR/node1/node1-console.log"
-echo "  tail -f $CLUSTER_DIR/node2/node2-console.log"
+echo "  tail -f $CLUSTER_DIR/controlplane-1/controlplane-1-console.log"
+echo "  tail -f $CLUSTER_DIR/nodes-1/nodes-1-console.log"
 echo ""
 echo "First boot runs cloud-init and reboots. Allow 90 seconds."
 echo ""
 echo "After boot, SSH in:"
-echo "  ssh ${VM_USER}@192.168.122.10   # node1"
-echo "  ssh ${VM_USER}@192.168.122.11   # node2"
+echo "  ssh ${VM_USER}@192.168.122.10   # controlplane-1"
+echo "  ssh ${VM_USER}@192.168.122.11   # nodes-1"
 echo ""
-echo "(Add a Host node1/node2 entry to ~/.ssh/config for short names.)"
+echo "(Add a Host controlplane-1/nodes-1 entry to ~/.ssh/config for short names.)"
 echo ""
 echo "To stop both nodes:"
 echo "  $CLUSTER_DIR/stop-cluster.sh"
@@ -480,24 +480,24 @@ chmod +x create-cluster.sh
 ./start-cluster.sh
 
 # Watch first boot. Cloud-init runs, reboots, then the second boot finishes.
-tail -f node1/node1-console.log
-# Ctrl-C once you see a login prompt, then check node2 the same way.
+tail -f controlplane-1/controlplane-1-console.log
+# Ctrl-C once you see a login prompt, then check nodes-1 the same way.
 ```
 
 ---
 
 ## Part 4: Configure SSH Access
 
-Add the following to `~/.ssh/config` on the host so `ssh node1` and `ssh node2` work without flags:
+Add the following to `~/.ssh/config` on the host so `ssh controlplane-1` and `ssh nodes-1` work without flags:
 
 ```ssh-config
-Host node1
+Host controlplane-1
     HostName 192.168.122.10
     User kube
     IdentityFile ~/.ssh/id_ed25519
     StrictHostKeyChecking accept-new
 
-Host node2
+Host nodes-1
     HostName 192.168.122.11
     User kube
     IdentityFile ~/.ssh/id_ed25519
@@ -518,20 +518,20 @@ ping -c 2 192.168.122.10
 ping -c 2 192.168.122.11
 
 # SSH works to both
-ssh node1 'hostname && ip -4 addr show enp0s2 | grep inet'
-ssh node2 'hostname && ip -4 addr show enp0s2 | grep inet'
+ssh controlplane-1 'hostname && ip -4 addr show enp0s2 | grep inet'
+ssh nodes-1 'hostname && ip -4 addr show enp0s2 | grep inet'
 
 # Each node can resolve and reach the other by name
-ssh node1 'ping -c 2 node2'
-ssh node2 'ping -c 2 node1'
+ssh controlplane-1 'ping -c 2 nodes-1'
+ssh nodes-1 'ping -c 2 controlplane-1'
 
 # Both have internet via NAT
-ssh node1 'curl -sI -o /dev/null -w "%{http_code}\n" https://kubernetes.io'
-ssh node2 'curl -sI -o /dev/null -w "%{http_code}\n" https://kubernetes.io'
+ssh controlplane-1 'curl -sI -o /dev/null -w "%{http_code}\n" https://kubernetes.io'
+ssh nodes-1 'curl -sI -o /dev/null -w "%{http_code}\n" https://kubernetes.io'
 
 # Cloud-init reports done
-ssh node1 'cloud-init status'
-ssh node2 'cloud-init status'
+ssh controlplane-1 'cloud-init status'
+ssh nodes-1 'cloud-init status'
 ```
 
 All checks should pass before moving to document 03.
@@ -540,7 +540,7 @@ All checks should pass before moving to document 03.
 
 Same set as the single-node guide, plus the static IP. On both VMs after first boot:
 
-- Hostname set to `node1` or `node2`
+- Hostname set to `controlplane-1` or `nodes-1`
 - `/etc/hosts` populated with both nodes for name resolution without DNS
 - Static IP assigned via netplan, bound to interface `enp0s2`
 - `kube` user created with passwordless sudo and your SSH key authorized
@@ -560,8 +560,8 @@ The two VMs are now provisioned and accessible:
 
 | VM | Role (assigned later) | IP | SSH Alias |
 |----|------------------------|----|-----------|
-| `node1` | Control plane | `192.168.122.10` | `ssh node1` |
-| `node2` | Worker | `192.168.122.11` | `ssh node2` |
+| `controlplane-1` | Control plane | `192.168.122.10` | `ssh controlplane-1` |
+| `nodes-1` | Worker | `192.168.122.11` | `ssh nodes-1` |
 
 All cluster-level lifecycle commands:
 

@@ -11,7 +11,7 @@ For host-side QEMU and bridge issues (VMs not starting, bridge missing, NAT not 
 ### Step 1: Cluster-Level Triage
 
 ```bash
-# From host or node1
+# From host or controlplane-1
 kubectl get nodes -o wide
 kubectl get pods -A -o wide | grep -Ev '\bRunning\b|\bCompleted\b'
 kubectl get events --sort-by='.lastTimestamp' | tail -30
@@ -136,14 +136,14 @@ For multi-node resets, run `kubeadm reset` on the worker first, then on the cont
 [discovery] Failed to request cluster-info, will try again: ... unauthorized
 ```
 
-Tokens default to 24-hour TTL. Generate a fresh one on `node1`:
+Tokens default to 24-hour TTL. Generate a fresh one on `controlplane-1`:
 
 ```bash
-ssh node1
+ssh controlplane-1
 kubeadm token create --print-join-command
 ```
 
-Use the new command on `node2`.
+Use the new command on `nodes-1`.
 
 ### CA Cert Hash Wrong
 
@@ -151,7 +151,7 @@ Use the new command on `node2`.
 [discovery] Failed to validate API server's identity
 ```
 
-The hash in the join command does not match the cluster's CA. Get the current hash on `node1`:
+The hash in the join command does not match the cluster's CA. Get the current hash on `controlplane-1`:
 
 ```bash
 openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | \
@@ -164,16 +164,16 @@ Use this hash in the join command's `--discovery-token-ca-cert-hash sha256:...`.
 ### Cert SAN Missing
 
 ```
-x509: certificate is valid for 192.168.122.10, but not for ...
+x509: certificate is valid for 192.168.100.10, but not for ...
 ```
 
 The IP or hostname being joined to was not in the kubeadm config's `certSANs`. Two options:
 
-1. Use an IP or name that is in the SANs (`192.168.122.10` always is).
+1. Use an IP or name that is in the SANs (`192.168.100.10` always is).
 2. Renew the apiserver cert with new SANs:
 
 ```bash
-# On node1
+# On controlplane-1
 sudo kubeadm certs renew apiserver
 # kubelet will restart the apiserver static pod automatically
 ```
@@ -183,13 +183,13 @@ sudo kubeadm certs renew apiserver
 This is normal for 30 to 60 seconds while the Calico DaemonSet schedules a `calico-node` pod onto the new node. If still `NotReady` after a minute:
 
 ```bash
-# From node1
-kubectl describe node node2 | grep -A 5 Conditions
+# From controlplane-1
+kubectl describe node nodes-1 | grep -A 5 Conditions
 kubectl -n calico-system get pods -o wide -l k8s-app=calico-node
 kubectl -n calico-system describe pod -l k8s-app=calico-node | grep -A 5 Events
 ```
 
-If `calico-node` on `node2` is stuck in `Init:0/3`, see the Calico section below.
+If `calico-node` on `nodes-1` is stuck in `Init:0/3`, see the Calico section below.
 
 ---
 
@@ -296,7 +296,7 @@ The single-node `runbook-worker-components.md` covers kubelet in detail. The dif
 |---|---|
 | `/var/lib/kubelet/kubelet-config.yaml` | `/var/lib/kubelet/config.yaml` |
 | `/var/lib/kubelet/kubeconfig` | `/etc/kubernetes/kubelet.conf` |
-| `/var/lib/kubelet/node1.pem`, `node1-key.pem` | `/var/lib/kubelet/pki/kubelet-client-current.pem` (auto-rotated) |
+| `/var/lib/kubelet/controlplane-1.pem`, `controlplane-1-key.pem` | `/var/lib/kubelet/pki/kubelet-client-current.pem` (auto-rotated) |
 
 `kubeadm` also writes a systemd drop-in at `/etc/systemd/system/kubelet.service.d/10-kubeadm.conf` that injects extra args from `/var/lib/kubelet/kubeadm-flags.env`. If kubelet starts with the wrong arguments, that drop-in is the place to look.
 
@@ -345,8 +345,8 @@ kubectl -n kube-system get pods -l k8s-app=kube-proxy -o wide
 kubectl -n kube-system logs -l k8s-app=kube-proxy --tail=50
 
 # Per-node iptables view
-ssh node1 'sudo iptables-save | grep KUBE | head -20'
-ssh node2 'sudo iptables-save | grep KUBE | head -20'
+ssh controlplane-1 'sudo iptables-save | grep KUBE | head -20'
+ssh nodes-1 'sudo iptables-save | grep KUBE | head -20'
 ```
 
 Common kube-proxy issue is wrong `clusterCIDR`:
@@ -443,7 +443,7 @@ A guaranteed exam topic. The two-node setup gives you a clean way to practice bo
 ### Plan
 
 ```bash
-# On node1
+# On controlplane-1
 sudo kubeadm upgrade plan
 ```
 
@@ -466,7 +466,7 @@ sudo apt-mark hold kubeadm
 sudo kubeadm upgrade apply v1.36.0
 
 # Drain
-kubectl drain node1 --ignore-daemonsets --delete-emptydir-data
+kubectl drain controlplane-1 --ignore-daemonsets --delete-emptydir-data
 
 # Upgrade kubelet and kubectl
 sudo apt-mark unhold kubelet kubectl
@@ -476,17 +476,17 @@ sudo systemctl daemon-reload
 sudo systemctl restart kubelet
 
 # Uncordon
-kubectl uncordon node1
+kubectl uncordon controlplane-1
 ```
 
 ### Worker Upgrade
 
-Same pattern on `node2`, except `sudo kubeadm upgrade node` instead of `apply`:
+Same pattern on `nodes-1`, except `sudo kubeadm upgrade node` instead of `apply`:
 
 ```bash
-ssh node2
+ssh nodes-1
 
-# Update apt source the same way as node1
+# Update apt source the same way as controlplane-1
 sudo apt update
 sudo apt-mark unhold kubeadm
 sudo apt install -y kubeadm=1.36.0-1.1
@@ -495,9 +495,9 @@ sudo apt-mark hold kubeadm
 sudo kubeadm upgrade node
 
 # Drain from the control plane
-ssh node1 'kubectl drain node2 --ignore-daemonsets --delete-emptydir-data'
+ssh controlplane-1 'kubectl drain nodes-1 --ignore-daemonsets --delete-emptydir-data'
 
-# Upgrade kubelet and kubectl on node2
+# Upgrade kubelet and kubectl on nodes-1
 sudo apt-mark unhold kubelet kubectl
 sudo apt install -y kubelet=1.36.0-1.1 kubectl=1.36.0-1.1
 sudo apt-mark hold kubelet kubectl
@@ -505,7 +505,7 @@ sudo systemctl daemon-reload
 sudo systemctl restart kubelet
 
 # Uncordon
-ssh node1 'kubectl uncordon node2'
+ssh controlplane-1 'kubectl uncordon nodes-1'
 ```
 
 ### Verify
@@ -529,7 +529,7 @@ ssh <node> 'sudo systemctl status kubelet containerd --no-pager | head -20'
 ssh <node> 'sudo journalctl -u kubelet -n 30 --no-pager'
 
 # 3. Static pods (control plane only)
-ssh node1 'sudo crictl ps | grep -E "apiserver|etcd|controller|scheduler"'
+ssh controlplane-1 'sudo crictl ps | grep -E "apiserver|etcd|controller|scheduler"'
 
 # 4. CNI
 kubectl -n calico-system get pods -o wide
@@ -541,7 +541,7 @@ kubectl -n kube-system get pods -l k8s-app=kube-dns
 kubectl -n kube-system get pods -l k8s-app=kube-proxy -o wide
 
 # 7. Cross-node
-kubectl run xtest --image=nginx:1.27 --overrides='{"spec":{"nodeName":"node2"}}' --restart=Never
+kubectl run xtest --image=nginx:1.27 --overrides='{"spec":{"nodeName":"nodes-1"}}' --restart=Never
 kubectl get pod xtest -o wide
 kubectl exec xtest -- curl -s --max-time 3 -o /dev/null -w "%{http_code}\n" http://kubernetes.default.svc.cluster.local
 kubectl delete pod xtest

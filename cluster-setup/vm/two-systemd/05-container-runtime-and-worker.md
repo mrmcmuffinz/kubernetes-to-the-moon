@@ -2,7 +2,7 @@
 
 **Based on:** [04-container-runtime.md](../../single-systemd/04-container-runtime.md) and [05-worker-components.md](../../single-systemd/05-worker-components.md) of the single-node guide.
 
-**Adapted for:** Two-node cluster. Same containerd configuration on each node. CNI bridge configuration uses a per-node pod CIDR slice. kubelet kubeconfigs reference the apiserver's bridge IP. RBAC for apiserver-to-kubelet is applied once from `node1`.
+**Adapted for:** Two-node cluster. Same containerd configuration on each node. CNI bridge configuration uses a per-node pod CIDR slice. kubelet kubeconfigs reference the apiserver's bridge IP. RBAC for apiserver-to-kubelet is applied once from `controlplane-1`.
 
 ---
 
@@ -16,15 +16,15 @@ This is two documents from the single-node guide combined into one, because both
 
 - All commands run on **both** nodes, except where noted.
 - Each node uses a different pod CIDR slice in `/etc/cni/net.d/10-bridge.conf`:
-  - `node1`: `10.244.0.0/24`
-  - `node2`: `10.244.1.0/24`
+  - `controlplane-1`: `10.244.0.0/24`
+  - `nodes-1`: `10.244.1.0/24`
 - kubelet kubeconfig points at `https://192.168.122.10:6443` instead of `127.0.0.1:6443`.
-- The kubelet certificate filename is per-node (`node1.pem` / `node2.pem`).
-- RBAC for apiserver-to-kubelet is applied once from `node1` after both kubelets are running.
+- The kubelet certificate filename is per-node (`controlplane-1.pem` / `nodes-1.pem`).
+- RBAC for apiserver-to-kubelet is applied once from `controlplane-1` after both kubelets are running.
 
 ## Prerequisites
 
-Document 04 complete. The control plane is up on `node1`. Both nodes have their certs and kubeconfigs in `~/auth/` from document 03.
+Document 04 complete. The control plane is up on `controlplane-1`. Both nodes have their certs and kubeconfigs in `~/auth/` from document 03.
 
 ---
 
@@ -153,10 +153,10 @@ sudo cp kubelet kube-proxy kubectl /usr/local/bin/
 
 The CNI bridge plugin uses a different subnet on each node. This is the key difference from the single-node guide and is what makes manual host routes (document 06) possible.
 
-### On node1
+### On controlplane-1
 
 ```bash
-ssh node1
+ssh controlplane-1
 sudo mkdir -p /etc/cni/net.d
 
 cat <<'EOF' | sudo tee /etc/cni/net.d/10-bridge.conf
@@ -186,10 +186,10 @@ cat <<'EOF' | sudo tee /etc/cni/net.d/99-loopback.conf
 EOF
 ```
 
-### On node2
+### On nodes-1
 
 ```bash
-ssh node2
+ssh nodes-1
 sudo mkdir -p /etc/cni/net.d
 
 cat <<'EOF' | sudo tee /etc/cni/net.d/10-bridge.conf
@@ -227,30 +227,30 @@ The only difference between the two `10-bridge.conf` files is the subnet. Get th
 
 The kubelet config is per-node because it references the node's specific certificate file. The systemd unit and configuration YAML are the same shape on both nodes; only the cert and kubeconfig filenames differ.
 
-### Step 1: Place Files (node1)
+### Step 1: Place Files (controlplane-1)
 
 ```bash
-ssh node1
+ssh controlplane-1
 sudo mkdir -p /var/lib/kubelet /var/lib/kubernetes
-sudo cp ~/auth/node1-key.pem ~/auth/node1.pem /var/lib/kubelet/
-sudo cp ~/auth/node1.kubeconfig /var/lib/kubelet/kubeconfig
+sudo cp ~/auth/controlplane-1-key.pem ~/auth/controlplane-1.pem /var/lib/kubelet/
+sudo cp ~/auth/controlplane-1.kubeconfig /var/lib/kubelet/kubeconfig
 sudo cp ~/auth/ca.pem /var/lib/kubernetes/
 ```
 
-### Step 1: Place Files (node2)
+### Step 1: Place Files (nodes-1)
 
 ```bash
-ssh node2
+ssh nodes-1
 sudo mkdir -p /var/lib/kubelet /var/lib/kubernetes
-sudo cp ~/auth/node2-key.pem ~/auth/node2.pem /var/lib/kubelet/
-sudo cp ~/auth/node2.kubeconfig /var/lib/kubelet/kubeconfig
+sudo cp ~/auth/nodes-1-key.pem ~/auth/nodes-1.pem /var/lib/kubelet/
+sudo cp ~/auth/nodes-1.kubeconfig /var/lib/kubelet/kubeconfig
 sudo cp ~/auth/ca.pem /var/lib/kubernetes/
 ```
 
-### Step 2: kubelet Config (node1)
+### Step 2: kubelet Config (controlplane-1)
 
 ```bash
-ssh node1
+ssh controlplane-1
 cat <<'EOF' | sudo tee /var/lib/kubelet/kubelet-config.yaml
 kind: KubeletConfiguration
 apiVersion: kubelet.config.k8s.io/v1beta1
@@ -268,17 +268,17 @@ clusterDNS:
   - "10.96.0.10"
 resolvConf: "/run/systemd/resolve/resolv.conf"
 runtimeRequestTimeout: "15m"
-tlsCertFile: "/var/lib/kubelet/node1.pem"
-tlsPrivateKeyFile: "/var/lib/kubelet/node1-key.pem"
+tlsCertFile: "/var/lib/kubelet/controlplane-1.pem"
+tlsPrivateKeyFile: "/var/lib/kubelet/controlplane-1-key.pem"
 containerRuntimeEndpoint: "unix:///var/run/containerd/containerd.sock"
 cgroupDriver: "systemd"
 EOF
 ```
 
-### Step 2: kubelet Config (node2)
+### Step 2: kubelet Config (nodes-1)
 
 ```bash
-ssh node2
+ssh nodes-1
 cat <<'EOF' | sudo tee /var/lib/kubelet/kubelet-config.yaml
 kind: KubeletConfiguration
 apiVersion: kubelet.config.k8s.io/v1beta1
@@ -296,8 +296,8 @@ clusterDNS:
   - "10.96.0.10"
 resolvConf: "/run/systemd/resolve/resolv.conf"
 runtimeRequestTimeout: "15m"
-tlsCertFile: "/var/lib/kubelet/node2.pem"
-tlsPrivateKeyFile: "/var/lib/kubelet/node2-key.pem"
+tlsCertFile: "/var/lib/kubelet/nodes-1.pem"
+tlsPrivateKeyFile: "/var/lib/kubelet/nodes-1-key.pem"
 containerRuntimeEndpoint: "unix:///var/run/containerd/containerd.sock"
 cgroupDriver: "systemd"
 EOF
@@ -334,7 +334,7 @@ sudo systemctl start kubelet
 
 ### Step 4: Verify Both Nodes Register
 
-From `node1`:
+From `controlplane-1`:
 
 ```bash
 kubectl get nodes -o wide
@@ -344,8 +344,8 @@ You should see:
 
 ```
 NAME    STATUS   ROLES    AGE   VERSION   INTERNAL-IP       ...
-node1   Ready    <none>   30s   v1.35.3   192.168.122.10    ...
-node2   Ready    <none>   25s   v1.35.3   192.168.122.11    ...
+controlplane-1   Ready    <none>   30s   v1.35.3   192.168.122.10    ...
+nodes-1   Ready    <none>   25s   v1.35.3   192.168.122.11    ...
 ```
 
 If a node is `NotReady`, check its kubelet logs:
@@ -365,8 +365,8 @@ kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.pod
 Expected output:
 
 ```
-node1   10.244.0.0/24
-node2   10.244.1.0/24
+controlplane-1   10.244.0.0/24
+nodes-1   10.244.1.0/24
 ```
 
 The CIDR shown here is what the **controller-manager** assigned. The CIDR you wrote in `/etc/cni/net.d/10-bridge.conf` is what the **CNI plugin** will actually use. If they do not match, pods on a node will get IPs that the cluster does not know how to route to. They should match here because we picked the same /24 slices manually that the controller would have picked anyway.
@@ -375,10 +375,10 @@ The CIDR shown here is what the **controller-manager** assigned. The CIDR you wr
 
 ## Part 5: API Server to kubelet RBAC (Run Once)
 
-The apiserver needs to be authorized to call kubelet for `kubectl exec`, `kubectl logs`, port-forwarding, and metrics. Create the RBAC rules from `node1` only:
+The apiserver needs to be authorized to call kubelet for `kubectl exec`, `kubectl logs`, port-forwarding, and metrics. Create the RBAC rules from `controlplane-1` only:
 
 ```bash
-ssh node1
+ssh controlplane-1
 
 cat <<'EOF' | kubectl apply -f -
 apiVersion: rbac.authorization.k8s.io/v1
@@ -483,20 +483,20 @@ sudo iptables -t nat -L KUBE-SERVICES 2>/dev/null | head -10
 Schedule a pod and verify it gets an IP. At this point, cross-node pod traffic does not work yet (document 06 fixes that), so this test only verifies the basic CNI on each node.
 
 ```bash
-ssh node1
+ssh controlplane-1
 
-# Schedule a pod, pinned to node1
+# Schedule a pod, pinned to controlplane-1
 kubectl run busybox-n1 --image=busybox:1.36 --restart=Never \
-  --overrides='{"spec":{"nodeName":"node1"}}' \
+  --overrides='{"spec":{"nodeName":"controlplane-1"}}' \
   --command -- sleep 600
 kubectl wait --for=condition=Ready pod/busybox-n1 --timeout=60s
 
 # Pod IP should be in 10.244.0.0/24
 kubectl get pod busybox-n1 -o wide
 
-# Schedule a pod on node2
+# Schedule a pod on nodes-1
 kubectl run busybox-n2 --image=busybox:1.36 --restart=Never \
-  --overrides='{"spec":{"nodeName":"node2"}}' \
+  --overrides='{"spec":{"nodeName":"nodes-1"}}' \
   --command -- sleep 600
 kubectl wait --for=condition=Ready pod/busybox-n2 --timeout=60s
 
@@ -507,8 +507,8 @@ kubectl get pod busybox-n2 -o wide
 If both pods get IPs in their expected ranges, the per-node CNI is working. Try `kubectl exec`:
 
 ```bash
-kubectl exec busybox-n1 -- sh -c 'echo "from node1 pod: $(hostname)"'
-kubectl exec busybox-n2 -- sh -c 'echo "from node2 pod: $(hostname)"'
+kubectl exec busybox-n1 -- sh -c 'echo "from controlplane-1 pod: $(hostname)"'
+kubectl exec busybox-n2 -- sh -c 'echo "from nodes-1 pod: $(hostname)"'
 ```
 
 Both `exec` commands should succeed because the apiserver-to-kubelet RBAC is in place.
@@ -520,8 +520,8 @@ N1_IP=$(kubectl get pod busybox-n1 -o jsonpath='{.status.podIP}')
 N2_IP=$(kubectl get pod busybox-n2 -o jsonpath='{.status.podIP}')
 
 # These will time out
-kubectl exec busybox-n1 -- ping -c 1 -W 2 "$N2_IP" || echo "node1 -> node2 pod: blocked (expected at this stage)"
-kubectl exec busybox-n2 -- ping -c 1 -W 2 "$N1_IP" || echo "node2 -> node1 pod: blocked (expected at this stage)"
+kubectl exec busybox-n1 -- ping -c 1 -W 2 "$N2_IP" || echo "controlplane-1 -> nodes-1 pod: blocked (expected at this stage)"
+kubectl exec busybox-n2 -- ping -c 1 -W 2 "$N1_IP" || echo "nodes-1 -> controlplane-1 pod: blocked (expected at this stage)"
 ```
 
 This is the routing problem document 06 solves. Leave the test pods running for now; you will use them again to verify after adding routes.
@@ -532,7 +532,7 @@ This is the routing problem document 06 solves. Leave the test pods running for 
 
 The worker components are running on both nodes:
 
-| Component | node1 | node2 |
+| Component | controlplane-1 | nodes-1 |
 |-----------|-------|-------|
 | containerd | Running | Running |
 | kubelet | Running, registered | Running, registered |

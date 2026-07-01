@@ -26,20 +26,16 @@ kubectl create namespace tutorial-ingress2
 
 ## Part 1: Installing HAProxy Ingress v3.2.6
 
-HAProxy Ingress is distributed via the `haproxy-ingress` Helm chart (upstream repository `https://haproxy-ingress.github.io/charts`). Pin the controller image to v3.2.6.
+HAProxy Ingress v3.2.6 is distributed via the `haproxytech/kubernetes-ingress` Helm chart (upstream repository `https://haproxytech.github.io/helm-charts`). Chart version `1.49.0` corresponds to app version `3.2.6`. The chart creates an IngressClass named `haproxy` by default.
 
 ```bash
-helm repo add haproxy-ingress https://haproxy-ingress.github.io/charts
+helm repo add haproxytech https://haproxytech.github.io/helm-charts
 helm repo update
 
-helm install haproxy-ingress haproxy-ingress/haproxy-ingress \
+helm install haproxy-ingress haproxytech/kubernetes-ingress \
+  --version 1.49.0 \
   --namespace haproxy-ingress --create-namespace \
-  --set controller.image.tag=v3.2.6 \
-  --set controller.service.type=ClusterIP \
-  --set controller.hostPort.enabled=false \
-  --set controller.ingressClass=haproxy \
-  --set controller.ingressClassResource.name=haproxy \
-  --set controller.ingressClassResource.enabled=true
+  --set controller.service.type=ClusterIP
 ```
 
 Because kind's port 80 and 443 are already bound by Traefik on the control-plane node, run HAProxy Ingress on a worker node with its own NodePort for testing on the internal ClusterIP. For this tutorial, we focus on Ingress API behavior and use `kubectl port-forward` to reach HAProxy from the host for verification.

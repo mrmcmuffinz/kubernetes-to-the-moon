@@ -12,7 +12,7 @@ If you want a working two-node cluster fast, use `cka/vm/two-kubeadm` instead.
 graph TB
     subgraph Host["Ubuntu 24.04 QEMU/KVM Host"]
         br0["br0 bridge<br/>192.168.122.1/24"]
-        subgraph node1["node1 (192.168.122.10)"]
+        subgraph controlplane-1["controlplane-1 (192.168.122.10)"]
             n1_cp["Control plane<br/>(systemd services)"]
             n1_etcd["etcd"]
             n1_api["kube-apiserver"]
@@ -22,17 +22,17 @@ graph TB
             n1_proxy["kube-proxy"]
             n1_cni["bridge CNI<br/>10.244.0.0/24"]
         end
-        subgraph node2["node2 (192.168.122.11)"]
+        subgraph nodes-1["nodes-1 (192.168.122.11)"]
             n2_kubelet["kubelet"]
             n2_proxy["kube-proxy"]
             n2_cni["bridge CNI<br/>10.244.1.0/24"]
         end
     end
 
-    br0 --- node1
-    br0 --- node2
-    node1 -. "manual host route<br/>10.244.1.0/24 via 192.168.122.11" .- node2
-    node2 -. "manual host route<br/>10.244.0.0/24 via 192.168.122.10" .- node1
+    br0 --- controlplane-1
+    br0 --- nodes-1
+    controlplane-1 -. "manual host route<br/>10.244.1.0/24 via 192.168.122.11" .- nodes-1
+    nodes-1 -. "manual host route<br/>10.244.0.0/24 via 192.168.122.10" .- controlplane-1
 ```
 
 Each node gets its own slice of the pod CIDR. Pod traffic between nodes crosses the bridge through host-side routes you add by hand. There is no overlay, no encapsulation, no eBPF. Just standard Linux routing.
@@ -64,29 +64,43 @@ Quick reference card with hostnames, IPs, version table, CIDR ranges, common com
 
 Configures the Linux bridge `br0` on the host, IP forwarding, and NAT for outbound traffic so the VMs can reach the internet for package installs and image pulls. Replaces the QEMU user-mode networking from `single-systemd`.
 
+**Time:** 20-30 min.
+
 ### [02 - VM Provisioning](02-vm-provisioning.md)
 
-Creates two headless Ubuntu 24.04 VMs (`node1`, `node2`) attached to the bridge with cloud-init and static IPs. Generates per-VM start/stop scripts and cluster-level scripts.
+Creates two headless Ubuntu 24.04 VMs (`controlplane-1`, `nodes-1`) attached to the bridge with cloud-init and static IPs. Generates per-VM start/stop scripts and cluster-level scripts.
+
+**Time:** 20-25 min.
 
 ### [03 - Bootstrapping Security](03-bootstrapping-security.md)
 
-Generates the cluster CA on `node1`, copies it to `node2`, then each node generates its own certificates and kubeconfigs. The certificate set differs from the single-node guide because each node now has a unique identity (`system:node:node1` vs `system:node:node2`) and the API server certificate must include both VMs' IPs in its SAN list.
+Generates the cluster CA on `controlplane-1`, copies it to `nodes-1`, then each node generates its own certificates and kubeconfigs. The certificate set differs from the single-node guide because each node now has a unique identity (`system:node:controlplane-1` vs `system:node:nodes-1`) and the API server certificate must include both VMs' IPs in its SAN list.
 
-### [04 - Control Plane (node1)](04-control-plane.md)
+**Time:** 35-45 min.
 
-Installs etcd, kube-apiserver, kube-controller-manager, and kube-scheduler as systemd services on `node1`. Same components as `single-systemd/03-control-plane.md`, but the apiserver now binds on `0.0.0.0` and uses a certificate that includes both VMs' IPs.
+### [04 - Control Plane (controlplane-1)](04-control-plane.md)
+
+Installs etcd, kube-apiserver, kube-controller-manager, and kube-scheduler as systemd services on `controlplane-1`. Same components as `single-systemd/03-control-plane.md`, but the apiserver now binds on `0.0.0.0` and uses a certificate that includes both VMs' IPs.
+
+**Time:** 30-40 min.
 
 ### [05 - Container Runtime and Worker (Both Nodes)](05-container-runtime-and-worker.md)
 
-Installs containerd, runc, crictl, the CNI plugin binaries, kubelet, and kube-proxy on both nodes. The CNI configuration on each node uses a per-node pod CIDR slice (`10.244.0.0/24` on `node1`, `10.244.1.0/24` on `node2`) and the kubeconfig points at the apiserver's bridge IP.
+Installs containerd, runc, crictl, the CNI plugin binaries, kubelet, and kube-proxy on both nodes. The CNI configuration on each node uses a per-node pod CIDR slice (`10.244.0.0/24` on `controlplane-1`, `10.244.1.0/24` on `nodes-1`) and the kubeconfig points at the apiserver's bridge IP.
+
+**Time:** 30-40 min.
 
 ### [06 - Manual Pod Routing](06-manual-pod-routing.md)
 
-The piece that does not exist in `single-systemd` and does not exist in `kubeadm`-installed clusters either, because Calico/Cilium/Flannel handle this automatically. With the basic bridge CNI, each node only knows how to route to its own pods. Cross-node pod traffic requires `ip route` entries on the host (or on each node) that point to the other node's pod CIDR via its bridge IP. This document explains the routing model and adds the routes.
+The piece that does not exist in `single-systemd` and does not exist in `kubeadm`-installed clusters either, because Calico/Cilium/Flannel handle this automatically. With the basic bridge CNI, each node only knows how to route to its own pods. Cross-node pod traffic requires `ip route` entries on the host (or on each node) that point to the other node's pod CIDR via its bridge IP. This document explains the routing model and adds the routes. This is the pedagogical payoff of the two-systemd guide: you see exactly what a CNI plugin does so you are not routing blindly.
+
+**Time:** 20-30 min.
 
 ### [07 - Cluster Services](07-cluster-services.md)
 
 Installs Helm, CoreDNS (manually, since this is a from-scratch build), local-path-provisioner, and optionally MetalLB now that bridge networking makes it viable.
+
+**Time:** 20-30 min.
 
 ## Component Versions
 
@@ -107,8 +121,8 @@ Installs Helm, CoreDNS (manually, since this is a from-scratch build), local-pat
 | `192.168.122.0/24` | Host bridge `br0` | VM IPs (`192.168.122.10`, `192.168.122.11`), host gateway (`192.168.122.1`) |
 | `10.96.0.0/16` | Service ClusterIPs | apiserver `--service-cluster-ip-range`, controller-manager `--service-cluster-ip-range`, CoreDNS ClusterIP (`10.96.0.10`), kubelet `clusterDNS` |
 | `10.244.0.0/16` | Total pod IP range | controller-manager `--cluster-cidr`, kube-proxy `clusterCIDR` |
-| `10.244.0.0/24` | `node1` pod slice | bridge CNI subnet on `node1` |
-| `10.244.1.0/24` | `node2` pod slice | bridge CNI subnet on `node2` |
+| `10.244.0.0/24` | `controlplane-1` pod slice | bridge CNI subnet on `controlplane-1` |
+| `10.244.1.0/24` | `nodes-1` pod slice | bridge CNI subnet on `nodes-1` |
 
 The per-node /24 slices are what make manual host routes possible. The controller-manager and kube-proxy still see the parent /16 because that is the total pod address space. Calico, Cilium, and Flannel all handle this slicing automatically with their own IPAM systems; with the basic bridge plugin you have to assign the slices yourself.
 

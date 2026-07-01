@@ -24,11 +24,16 @@ Attached to the NGF Gateway via `parentRefs`. Same shape as Envoy Gateway HTTPRo
 
 ## Exercise 1.2 Solution
 
-```bash
-kubectl get gatewayclass nginx -o jsonpath='{.spec.controllerName}'
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata: {name: gw, namespace: ex-1-2}
+spec:
+  gatewayClassName: nginx
+  listeners: [{name: http, protocol: HTTP, port: 80, allowedRoutes: {namespaces: {from: Same}}}]
 ```
 
-Returns `gateway.nginx.org/nginx-gateway-controller`, the unique ID the NGINX Gateway Fabric controller registers with.
+When NGF processes this Gateway, it provisions a dedicated data-plane Deployment and a Service named `gw-nginx` in `ex-1-2`, following the `<gateway-name>-nginx` naming rule. The Service is type `LoadBalancer` with a NodePort assigned; `EXTERNAL-IP` stays pending on clusters without a LoadBalancer controller. The Gateway reaches `Programmed: True` once the data-plane pod is running and healthy.
 
 ---
 
@@ -80,8 +85,6 @@ Each rule scopes to a specific header value. A request with no `X-Tenant` header
 
 ## Exercise 2.2 Solution
 
-The setup block includes the HTTPRoute. Verify only.
-
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -105,7 +108,7 @@ spec:
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
-metadata: {name: combined, namespace: ex-2-1}
+metadata: {name: combined, namespace: ex-2-3}
 spec:
   parentRefs: [{name: gw}]
   hostnames: ["combined.example.test"]
@@ -114,10 +117,10 @@ spec:
     - path: {type: PathPrefix, value: /api}
       method: POST
       headers: [{name: X-API-Key, value: admin}]
-    backendRefs: [{name: red-app, port: 80}]
+    backendRefs: [{name: echo-app, port: 80}]
 ```
 
-All conditions inside one `matches[*]` object AND together. If any fails, the rule does not match.
+All conditions inside one `matches[*]` object AND together. If any fails, the rule does not match. Exercise 2.3 uses its own namespace (`ex-2-3`) rather than sharing with 2.1 and 2.2. NGF v2.x indexes internal proxy routes per-namespace; adding a new backend to a namespace that already has others causes route index conflicts that prevent the new backend from being reached correctly.
 
 ---
 
@@ -127,7 +130,14 @@ All conditions inside one `matches[*]` object AND together. If any fails, the ru
 
 ```bash
 kubectl get httproute -n ex-3-1 order-bug -o yaml | grep -A 20 "filters"
-curl -s -H "Host: order.example.test" http://localhost:9041/old/items
+NGF_NODE=$(kubectl get pods -n ex-3-1 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-3-1 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
+curl -s -H "Host: order.example.test" "http://$NGINX_IP:$NGINX_PORT/old/items"
 ```
 
 The HTTPRoute has both `URLRewrite` and `RequestRedirect` in its filters array. `RequestRedirect` is terminal; when applied, the response is a 3xx and control does not proceed to the backend. With both present in that order, the rewrite computes the new path and then the redirect returns a 3xx based on the rewritten path. The backend never sees the request.
@@ -150,9 +160,16 @@ Now only URLRewrite remains; the backend sees `/new/items`.
 **Diagnosis.**
 
 ```bash
-curl -v -H "Host: case.example.test" -H "X-Env: production" http://localhost:9042/
+NGF_NODE=$(kubectl get pods -n ex-3-2 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-3-2 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
+curl -v -H "Host: case.example.test" -H "X-Env: production" "http://$NGINX_IP:$NGINX_PORT/"
 # 404
-curl -v -H "Host: case.example.test" -H "X-Env: Production" http://localhost:9042/
+curl -v -H "Host: case.example.test" -H "X-Env: Production" "http://$NGINX_IP:$NGINX_PORT/"
 # 200 case-app
 ```
 
@@ -286,7 +303,7 @@ kubectl patch httproute -n ex-5-1 canary --type='json' -p='[
 ]'
 ```
 
-Envoy-Gateway and NGINX Gateway Fabric both propagate weight changes to the data plane within seconds. A canary deployment traditionally uses this pattern: start at 1%, increase to 5%, 10%, 50%, and eventually shift all traffic.
+Envoy Gateway and NGINX Gateway Fabric both propagate weight changes to the data plane within seconds. A canary deployment traditionally uses this pattern: start at 1%, increase to 5%, 10%, 50%, and eventually shift all traffic.
 
 ---
 
@@ -295,7 +312,14 @@ Envoy-Gateway and NGINX Gateway Fabric both propagate weight changes to the data
 **Diagnosis.**
 
 ```bash
-curl -sI -H "Host: order.example.test" http://localhost:9052/old-api/data
+NGF_NODE=$(kubectl get pods -n ex-5-2 \
+  -l gateway.networking.k8s.io/gateway-name=gw \
+  -o jsonpath='{.items[0].spec.nodeName}')
+NGINX_IP=$(kubectl get node "$NGF_NODE" \
+  -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+NGINX_PORT=$(kubectl get svc -n ex-5-2 gw-nginx \
+  -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
+curl -sI -H "Host: order.example.test" "http://$NGINX_IP:$NGINX_PORT/old-api/data"
 # HTTP/1.1 302 Found
 # Location: /new-api/data
 ```
@@ -367,9 +391,11 @@ The first rule is more specific (requires both path and header); it wins for can
 |---|---|
 | NGF Gateway programmed | `kubectl get gateway -n <ns> <name> -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status}'` |
 | HTTPRoute matches debug | `kubectl describe httproute -n <ns> <name>` |
-| NGF data-plane Service | `kubectl get svc -n nginx-gateway -l app.kubernetes.io/instance=ngf` |
+| Find NGF data-plane pod node | `kubectl get pods -n <ns> -l gateway.networking.k8s.io/gateway-name=<gw-name> -o jsonpath='{.items[0].spec.nodeName}'` |
+| Get node internal IP | `kubectl get node <node> -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}'` |
+| NGF data-plane NodePort | `kubectl get svc -n <ns> <gw-name>-nginx -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}'` |
 | NGF controller logs | `kubectl logs -n nginx-gateway -l app.kubernetes.io/instance=ngf --tail=50` |
-| Request with header | `curl -H "X-Tenant: red" http://localhost:<port>/` |
-| Request with query param | `curl "http://localhost:<port>/?env=prod"` |
-| Request with explicit method | `curl -X POST http://localhost:<port>/` |
+| Request with header | `curl -H "X-Tenant: red" "http://$NGINX_IP:$NGINX_PORT/"` |
+| Request with query param | `curl "http://$NGINX_IP:$NGINX_PORT/?env=prod"` |
+| Request with explicit method | `curl -X POST "http://$NGINX_IP:$NGINX_PORT/"` |
 | Follow redirects off | `curl -sI ...` shows the 3xx response; `-L` follows |

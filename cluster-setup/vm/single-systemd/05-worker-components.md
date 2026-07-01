@@ -38,7 +38,7 @@ k8s_version=1.35.3
 cni_plugins_version=1.7.1
 cni_spec_version=1.0.0
 
-vmname=node1
+vmname=controlplane-1
 pod_cidr=10.244.0.0/16
 ```
 
@@ -192,7 +192,7 @@ You should see:
 
 ```
 NAME    STATUS   ROLES    AGE   VERSION   INTERNAL-IP   ...
-node1   Ready    <none>   30s   v1.35.3   10.0.2.15     ...
+controlplane-1   Ready    <none>   30s   v1.35.3   10.0.2.15     ...
 ```
 
 The `Ready` status confirms that kubelet is running and the CNI plugins are properly configured. If the status shows `NotReady`, check kubelet logs with `journalctl -u kubelet`.
@@ -340,7 +340,7 @@ After pulling the image (this may take a minute on first run), you should see:
 
 ```
 NAME      READY   STATUS    RESTARTS   AGE   IP            NODE    ...
-busybox   1/1     Running   0          45s   10.244.0.2    node1   ...
+busybox   1/1     Running   0          45s   10.244.0.2    controlplane-1   ...
 ```
 
 The pod has an IP from the `10.244.0.0/16` range, confirming the CNI is working.

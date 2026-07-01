@@ -90,13 +90,20 @@ spec:
       containers:
       - name: nginx
         image: nginx:1.27
-        volumeMounts: [{name: html, mountPath: /usr/share/nginx/html}]
+        volumeMounts: [{name: html, mountPath: /etc/nginx/conf.d}]
       volumes: [{name: html, configMap: {name: a-html}}]
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: a-html}
-data: {index.html: "a-response\n"}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "a-response";
+      }
+    }
 ---
 apiVersion: v1
 kind: Service
@@ -115,13 +122,20 @@ spec:
       containers:
       - name: nginx
         image: nginx:1.27
-        volumeMounts: [{name: html, mountPath: /usr/share/nginx/html}]
+        volumeMounts: [{name: html, mountPath: /etc/nginx/conf.d}]
       volumes: [{name: html, configMap: {name: b-html}}]
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: b-html}
-data: {index.html: "b-response\n"}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "b-response";
+      }
+    }
 ---
 apiVersion: v1
 kind: Service
@@ -171,13 +185,20 @@ spec:
       containers:
       - name: nginx
         image: nginx:1.27
-        volumeMounts: [{name: html, mountPath: /usr/share/nginx/html}]
+        volumeMounts: [{name: html, mountPath: /etc/nginx/conf.d}]
       volumes: [{name: html, configMap: {name: fallback-html}}]
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: fallback-html}
-data: {index.html: "fallback-served\n"}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "fallback-served";
+      }
+    }
 ---
 apiVersion: v1
 kind: Service
@@ -225,13 +246,20 @@ spec:
       containers:
       - name: nginx
         image: nginx:1.27
-        volumeMounts: [{name: html, mountPath: /usr/share/nginx/html}]
+        volumeMounts: [{name: html, mountPath: /etc/nginx/conf.d}]
       volumes: [{name: html, configMap: {name: api-html}}]
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: api-html}
-data: {index.html: "api-v1\n"}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "api-v1\n";
+      }
+    }
 ---
 apiVersion: v1
 kind: Service
@@ -278,13 +306,20 @@ spec:
     metadata: {labels: {app: foo}}
     spec:
       containers:
-      - {name: nginx, image: nginx:1.27, volumeMounts: [{name: html, mountPath: /usr/share/nginx/html}]}
+      - {name: nginx, image: nginx:1.27, volumeMounts: [{name: html, mountPath: /etc/nginx/conf.d}]}
       volumes: [{name: html, configMap: {name: foo-html}}]
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: foo-html}
-data: {index.html: "foo-app\n"}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "foo-app";
+      }
+    }
 ---
 apiVersion: v1
 kind: Service
@@ -301,13 +336,20 @@ spec:
     metadata: {labels: {app: bar}}
     spec:
       containers:
-      - {name: nginx, image: nginx:1.27, volumeMounts: [{name: html, mountPath: /usr/share/nginx/html}]}
+      - {name: nginx, image: nginx:1.27, volumeMounts: [{name: html, mountPath: /etc/nginx/conf.d}]}
       volumes: [{name: html, configMap: {name: bar-html}}]
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: bar-html}
-data: {index.html: "bar-app\n"}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "bar-app";
+      }
+    }
 ---
 apiVersion: v1
 kind: Service
@@ -396,16 +438,18 @@ EOF
 kubectl -n ex-2-3 rollout status deployment/app deployment/default --timeout=60s
 ```
 
-**Task:** Create Ingress `with-fallback` in namespace `ex-2-3` with `defaultBackend` pointing at `default` and a single rule host `app.example.test` path `/` to Service `app`.
+> **Note:** This exercise uses a `defaultBackend`, which conflicts with the one created in exercise 1.3. Delete that namespace before starting: `kubectl delete namespace ex-1-3`
+
+**Task:** Create two Ingress resources in namespace `ex-2-3`. The first, named `app-route`, has ingressClassName `traefik`, annotation `traefik.ingress.kubernetes.io/router.priority: "10"`, and a single rule: host `app.example.test`, path `/`, pathType `Prefix`, backend Service `app`. The second, named `with-fallback`, has ingressClassName `traefik`, annotation `traefik.ingress.kubernetes.io/router.priority: "1"`, and only a `defaultBackend` pointing at Service `default` (no rules). The priority annotation ensures `app-route` wins for its host while `with-fallback` acts as a cluster-wide catch-all for any host not matched by another Ingress.
 
 **Verification:**
 
 ```bash
 sleep 3
-curl -s -H "Host: app.example.test" http://localhost/
+curl -s -H "Host: app.example.test" http://192.168.200.12:32080/
 # Expected: app-alpha
 
-curl -s -H "Host: other.example.test" http://localhost/
+curl -s -H "Host: other.example.test" http://192.168.200.12:32080/
 # Expected: default-fallback
 ```
 
@@ -465,9 +509,6 @@ kubectl -n ex-3-1 rollout status deployment/hi --timeout=60s
 
 ```bash
 sleep 5
-kubectl get ingress -n ex-3-1 stuck -o jsonpath='{.spec.ingressClassName}'
-# Expected: traefik
-
 curl -s -H "Host: stuck.example.test" http://localhost/
 # Expected: hi-reply
 ```
@@ -520,7 +561,7 @@ EOF
 kubectl -n ex-3-2 rollout status deployment/frontend --timeout=60s
 ```
 
-**Task:** Requests currently return 404 because the Ingress points at a non-existent Service. Fix the Ingress.
+**Task:** Fix the Ingress so traffic reaches the backend.
 
 **Verification:**
 
@@ -534,7 +575,7 @@ curl -s -H "Host: frontend.example.test" http://localhost/
 
 ### Exercise 3.3
 
-**Objective:** The Ingress below uses `pathType: Exact` on `/api` but the application serves at `/api/v1`. Fix.
+**Objective:** An Ingress returns 404 for a valid path. Find and fix.
 
 **Setup:**
 
@@ -562,7 +603,7 @@ data:
     server {
       listen 80;
       location /api/v1 {
-        return 200 "api-v1-endpoint\n";
+        return 200 "api-v1-endpoint";
       }
     }
 ---
@@ -627,13 +668,20 @@ spec:
     metadata: {labels: {app: x}}
     spec:
       containers:
-      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /usr/share/nginx/html}]}
+      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /etc/nginx/conf.d}]}
       volumes: [{name: h, configMap: {name: x-html}}]
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: x-html}
-data: {index.html: "x-reply\n"}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "x-reply";
+      }
+    }
 ---
 apiVersion: v1
 kind: Service
@@ -650,13 +698,20 @@ spec:
     metadata: {labels: {app: y}}
     spec:
       containers:
-      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /usr/share/nginx/html}]}
+      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /etc/nginx/conf.d}]}
       volumes: [{name: h, configMap: {name: y-html}}]
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: y-html}
-data: {index.html: "y-reply\n"}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "y-reply";
+      }
+    }
 ---
 apiVersion: v1
 kind: Service
@@ -673,13 +728,20 @@ spec:
     metadata: {labels: {app: default}}
     spec:
       containers:
-      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /usr/share/nginx/html}]}
+      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /etc/nginx/conf.d}]}
       volumes: [{name: h, configMap: {name: default-html}}]
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: default-html}
-data: {index.html: "default-reply\n"}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "default-reply";
+      }
+    }
 ---
 apiVersion: v1
 kind: Service
@@ -689,19 +751,21 @@ EOF
 kubectl -n ex-4-1 rollout status deployment/svc-x deployment/svc-y deployment/svc-default --timeout=60s
 ```
 
-**Task:** Create Ingress `four-one` in namespace `ex-4-1` with `defaultBackend` pointing at `svc-default` and two rules under host `app.example.test`: `/x` (Prefix) -> `svc-x`, `/y` (Prefix) -> `svc-y`.
+> **Note:** This exercise uses a `defaultBackend`, which conflicts with the one created in exercise 2.3. Delete that namespace before starting: `kubectl delete namespace ex-2-3`
+
+**Task:** Create two Ingress resources in namespace `ex-4-1`. The first, named `four-one-routes`, has ingressClassName `traefik`, annotation `traefik.ingress.kubernetes.io/router.priority: "10"`, and two rules under host `app.example.test`: path `/x` (Prefix) -> `svc-x`, path `/y` (Prefix) -> `svc-y`. The second, named `four-one-fallback`, has ingressClassName `traefik`, annotation `traefik.ingress.kubernetes.io/router.priority: "1"`, and only a `defaultBackend` pointing at `svc-default`. Requests to `/z` (or any unmatched path or host) fall through to the catch-all fallback.
 
 **Verification:**
 
 ```bash
 sleep 3
-curl -s -H "Host: app.example.test" http://localhost/x
+curl -s -H "Host: app.example.test" http://192.168.200.12:32080/x
 # Expected: x-reply
 
-curl -s -H "Host: app.example.test" http://localhost/y
+curl -s -H "Host: app.example.test" http://192.168.200.12:32080/y
 # Expected: y-reply
 
-curl -s -H "Host: app.example.test" http://localhost/z
+curl -s -H "Host: app.example.test" http://192.168.200.12:32080/z
 # Expected: default-reply
 ```
 
@@ -788,13 +852,20 @@ spec:
     metadata: {labels: {app: api-v1}}
     spec:
       containers:
-      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /usr/share/nginx/html}]}
+      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /etc/nginx/conf.d}]}
       volumes: [{name: h, configMap: {name: api-v1-html}}]
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: api-v1-html}
-data: {index.html: "api-v1-response\n"}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "api-v1-response";
+      }
+    }
 ---
 apiVersion: v1
 kind: Service
@@ -811,13 +882,20 @@ spec:
     metadata: {labels: {app: api-v2}}
     spec:
       containers:
-      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /usr/share/nginx/html}]}
+      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /etc/nginx/conf.d}]}
       volumes: [{name: h, configMap: {name: api-v2-html}}]
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: api-v2-html}
-data: {index.html: "api-v2-response\n"}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "api-v2-response";
+      }
+    }
 ---
 apiVersion: v1
 kind: Service
@@ -857,7 +935,7 @@ curl -sI -H "Host: versioned.example.test" http://localhost/api/v3
 kubectl create namespace ex-5-1
 
 # Create five backend Services
-for svc in marketing api admin static health; do
+for svc in marketing api admin; do
   kubectl apply -n ex-5-1 -f - <<EOF
 apiVersion: apps/v1
 kind: Deployment
@@ -883,11 +961,77 @@ metadata: {name: $svc}
 spec: {selector: {app: $svc}, ports: [{port: 80, targetPort: 80}]}
 EOF
 done
+
+# static and health are served at sub-paths; use return 200 so nginx responds
+# regardless of which path Traefik forwards (avoids nginx directory redirect)
+kubectl apply -n ex-5-1 -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: static}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: static}}
+  template:
+    metadata: {labels: {app: static}}
+    spec:
+      containers:
+      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /etc/nginx/conf.d}]}
+      volumes: [{name: h, configMap: {name: static-html}}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: static-html}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "static-response";
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata: {name: static}
+spec: {selector: {app: static}, ports: [{port: 80, targetPort: 80}]}
+EOF
+
+kubectl apply -n ex-5-1 -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: health}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: health}}
+  template:
+    metadata: {labels: {app: health}}
+    spec:
+      containers:
+      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /etc/nginx/conf.d}]}
+      volumes: [{name: h, configMap: {name: health-html}}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: health-html}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "health-response";
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata: {name: health}
+spec: {selector: {app: health}, ports: [{port: 80, targetPort: 80}]}
+EOF
 sleep 5
 kubectl -n ex-5-1 wait --for=condition=Available deployment --all --timeout=120s
 ```
 
-**Task:** Create a single Ingress `webapp` with `defaultBackend: marketing`, host `www.webapp.example.test` with `/` (Prefix) -> `marketing` and `/static` (Prefix) -> `static`, host `api.webapp.example.test` with `/` (Prefix) -> `api`, host `admin.webapp.example.test` with `/` (Prefix) -> `admin`, and host `health.webapp.example.test` with `/healthz` (Exact) -> `health`.
+**Task:** Create a single Ingress `webapp` with host `www.webapp.example.test` with `/` (Prefix) -> `marketing` and `/static` (Prefix) -> `static`, host `api.webapp.example.test` with `/` (Prefix) -> `api`, host `admin.webapp.example.test` with `/` (Prefix) -> `admin`, and host `health.webapp.example.test` with `/healthz` (Exact) -> `health`.
 
 **Verification:**
 
@@ -911,7 +1055,7 @@ done
 
 ### Exercise 5.2
 
-**Objective:** Diagnose a compound Ingress failure: a wrong IngressClass, a wrong Service name, and a wrong path type. All three must be fixed.
+**Objective:** Diagnose a compound Ingress failure with three issues. Fix all three.
 
 **Setup:**
 
@@ -938,7 +1082,7 @@ data:
   default.conf: |
     server {
       listen 80;
-      location /v1/status { return 200 "healthy-v1\n"; }
+      location /v1/status { return 200 "healthy-v1"; }
     }
 ---
 apiVersion: v1
@@ -971,9 +1115,6 @@ kubectl -n ex-5-2 rollout status deployment/real-svc --timeout=60s
 
 ```bash
 sleep 3
-kubectl get ingress -n ex-5-2 broken -o jsonpath='{.spec.ingressClassName}'
-# Expected: traefik
-
 curl -s -H "Host: cascading.example.test" http://localhost/v1/status
 # Expected: healthy-v1
 ```
@@ -988,32 +1129,98 @@ curl -s -H "Host: cascading.example.test" http://localhost/v1/status
 
 ```bash
 kubectl create namespace ex-5-3
-for svc in api ui health; do
-  kubectl apply -n ex-5-3 -f - <<EOF
+
+# ui is served at / so root mountPath is correct
+kubectl apply -n ex-5-3 -f - <<'EOF'
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: $svc}
+metadata: {name: ui}
 spec:
   replicas: 2
-  selector: {matchLabels: {app: $svc}}
+  selector: {matchLabels: {app: ui}}
   template:
-    metadata: {labels: {app: $svc}}
+    metadata: {labels: {app: ui}}
     spec:
       containers:
       - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /usr/share/nginx/html}]}
-      volumes: [{name: h, configMap: {name: $svc-html}}]
+      volumes: [{name: h, configMap: {name: ui-html}}]
 ---
 apiVersion: v1
 kind: ConfigMap
-metadata: {name: $svc-html}
-data: {index.html: "$svc-v1\n"}
+metadata: {name: ui-html}
+data: {index.html: "ui-v1\n"}
 ---
 apiVersion: v1
 kind: Service
-metadata: {name: $svc}
-spec: {selector: {app: $svc}, ports: [{port: 80, targetPort: 80}]}
+metadata: {name: ui}
+spec: {selector: {app: ui}, ports: [{port: 80, targetPort: 80}]}
 EOF
-done
+
+# api and health are served at sub-paths; use return 200 so nginx responds
+# regardless of which path Traefik forwards (avoids nginx directory redirect)
+kubectl apply -n ex-5-3 -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: api}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: api}}
+  template:
+    metadata: {labels: {app: api}}
+    spec:
+      containers:
+      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /etc/nginx/conf.d}]}
+      volumes: [{name: h, configMap: {name: api-html}}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: api-html}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "api-v1";
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata: {name: api}
+spec: {selector: {app: api}, ports: [{port: 80, targetPort: 80}]}
+EOF
+
+kubectl apply -n ex-5-3 -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: health}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: health}}
+  template:
+    metadata: {labels: {app: health}}
+    spec:
+      containers:
+      - {name: n, image: nginx:1.27, volumeMounts: [{name: h, mountPath: /etc/nginx/conf.d}]}
+      volumes: [{name: h, configMap: {name: health-html}}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: health-html}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / {
+        return 200 "health-v1";
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata: {name: health}
+spec: {selector: {app: health}, ports: [{port: 80, targetPort: 80}]}
+EOF
 sleep 5
 kubectl -n ex-5-3 wait --for=condition=Available deployment --all --timeout=120s
 ```

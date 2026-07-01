@@ -20,8 +20,8 @@ Two QEMU/KVM virtual machines on a host-side Linux bridge, running Ubuntu 24.04,
 ```mermaid
 graph TB
     subgraph Host["Ubuntu 24.04 QEMU/KVM Host"]
-        br0["br0 bridge<br/>192.168.122.1/24"]
-        subgraph node1["node1 (control plane)<br/>192.168.122.10"]
+        br-vm["br-vm bridge<br/>192.168.100.1/24"]
+        subgraph controlplane-1["controlplane-1 (control plane)<br/>192.168.100.10"]
             cp_etcd["etcd"]
             cp_api["kube-apiserver"]
             cp_sch["kube-scheduler"]
@@ -30,7 +30,7 @@ graph TB
             cp_proxy["kube-proxy"]
             cp_calico["calico-node"]
         end
-        subgraph node2["node2 (worker)<br/>192.168.122.11"]
+        subgraph nodes-1["nodes-1 (worker)<br/>192.168.100.11"]
             wk_kubelet["kubelet"]
             wk_proxy["kube-proxy"]
             wk_calico["calico-node"]
@@ -42,8 +42,8 @@ graph TB
         end
     end
 
-    br0 --- node1
-    br0 --- node2
+    br-vm --- controlplane-1
+    br-vm --- nodes-1
 ```
 
 Both VMs sit on the same Linux bridge with real IPs, so they can reach each other directly and you can SSH into either one from the host without port forwarding.
@@ -76,45 +76,45 @@ Quick reference card: hostnames, IPs, version table, CIDR ranges, common command
 
 ### [01 - Host Bridge Setup](01-host-bridge-setup.md)
 
-Configures a Linux bridge `br0` on the host so that both VMs share an L2 segment, get real IPs in `192.168.122.0/24`, and can be SSH'd into directly with no port forwarding. Adds NAT rules so the VMs reach the internet through the host's uplink. Replaces the QEMU user-mode networking from the single-node guide.
+Configures a Linux bridge `br-vm` on the host so that both VMs share an L2 segment, get real IPs in `192.168.100.0/24`, and can be SSH'd into directly with no port forwarding. Adds NAT rules so the VMs reach the internet through the host's uplink. Replaces the QEMU user-mode networking from the single-node guide.
 
-**Result:** A `br0` interface on the host with `192.168.122.1/24`, NAT in place for outbound traffic, and `qemu-bridge-helper` configured to attach VMs.
+**Time:** 20-30 min. **Result:** A `br-vm` interface on the host with `192.168.100.1/24`, NAT in place for outbound traffic, and `qemu-bridge-helper` configured to attach VMs.
 
 ### [02 - VM Provisioning](02-vm-provisioning.md)
 
-Creates two headless Ubuntu 24.04 VMs (`node1` and `node2`) with cloud-init, attached to `br0` with static IPs. Generates per-VM start and stop scripts and cluster-level scripts that operate on both nodes at once. The cloud-init config disables swap, loads kernel modules, and sets sysctls for both nodes.
+Creates two headless Ubuntu 24.04 VMs (`controlplane-1` and `nodes-1`) with cloud-init, attached to `br-vm` with static IPs. Generates per-VM start and stop scripts and cluster-level scripts that operate on both nodes at once. The cloud-init config disables swap, loads kernel modules, and sets sysctls for both nodes.
 
-**Result:** Two VMs reachable at `ssh node1` and `ssh node2`, each with `kubeadm` prerequisites already met.
+**Time:** 15-20 min. **Result:** Two VMs reachable at `ssh controlplane-1` and `ssh nodes-1`, each with `kubeadm` prerequisites already met.
 
 ### [03 - Node Prerequisites](03-node-prerequisites.md)
 
-Installs containerd, runc, the CNI plugin binaries, crictl, and the `kubeadm`, `kubelet`, `kubectl` tools on both nodes. Configures containerd for systemd cgroup management. Pins package versions so a routine `apt upgrade` does not silently bump the cluster mid-lab. This document is identical for both nodes.
+Installs containerd and crictl via apt, the CNI plugin binaries from the upstream release, and the `kubeadm`, `kubelet`, `kubectl` tools on both nodes. Configures containerd for systemd cgroup management. Pins package versions so a routine `apt upgrade` does not silently bump the cluster mid-lab. This document is identical for both nodes.
 
-**Result:** Both nodes have a working container runtime and the `kubeadm` toolchain at v1.35.3.
+**Time:** 10-15 min. **Result:** Both nodes have a working container runtime and the `kubeadm` toolchain at v1.35.3.
 
 ### [04 - Control Plane Init](04-control-plane-init.md)
 
-Runs `kubeadm init` on `node1` with a YAML config (not flags), sets up `kubectl` access, and copies the kubeconfig to the host. Includes a mapping table from each `kubeadm`-generated file back to its hand-rolled equivalent in the single-node guide.
+Runs `kubeadm init` on `controlplane-1` with a YAML config (not flags), sets up `kubectl` access, and copies the kubeconfig to the host. Includes a mapping table from each `kubeadm`-generated file back to its hand-rolled equivalent in the single-node guide.
 
-**Result:** A functioning Kubernetes API at `https://192.168.122.10:6443`. `node1` is `NotReady` because there is no CNI yet.
+**Time:** 10-15 min. **Result:** A functioning Kubernetes API at `https://192.168.100.10:6443`. `controlplane-1` is `NotReady` because there is no CNI yet.
 
 ### [05 - CNI Installation](05-cni-installation.md)
 
-Installs Calico via the Tigera operator with a custom `Installation` resource that aligns the IPPool CIDR with the `kubeadm` `podSubnet`. Removes the control plane `NoSchedule` taint so workloads can run on `node1`. Verifies `NetworkPolicy` enforcement, since Flannel silently ignoring `NetworkPolicy` is the most common CKA exam CNI gotcha.
+Installs Calico via the Tigera operator with a custom `Installation` resource that aligns the IPPool CIDR with the `kubeadm` `podSubnet`. Removes the control plane `NoSchedule` taint so workloads can run on `controlplane-1`. Verifies `NetworkPolicy` enforcement, since Flannel silently ignoring `NetworkPolicy` is the most common CKA exam CNI gotcha.
 
-**Result:** `node1` goes `Ready`, pods get IPs from `10.244.0.0/16`, and `NetworkPolicy` is enforced.
+**Time:** 5-10 min. **Result:** `controlplane-1` goes `Ready`, pods get IPs from `10.244.0.0/16`, and `NetworkPolicy` is enforced.
 
 ### [06 - Worker Join](06-worker-join.md)
 
-Joins `node2` to the cluster with a freshly generated `kubeadm token`, verifies cross-node pod-to-pod traffic across the Calico VXLAN tunnel, and snapshots both qcow2 disks so you can roll back to clean-install state after deliberately breaking things.
+Joins `nodes-1` to the cluster with a freshly generated `kubeadm token`, verifies cross-node pod-to-pod traffic across the Calico VXLAN tunnel, and snapshots both qcow2 disks so you can roll back to clean-install state after deliberately breaking things.
 
-**Result:** Both nodes `Ready`, pods scheduling on both, cross-node Service resolution working.
+**Time:** 10-15 min. **Result:** Both nodes `Ready`, pods scheduling on both, cross-node Service resolution working.
 
 ### [07 - Cluster Services](07-cluster-services.md)
 
 Installs the same set of services as the single-node `06-cluster-services.md`, adapted for two nodes: `local-path-provisioner` for PVCs, Helm, `metrics-server` (with the lab-only `--kubelet-insecure-tls` flag) for HPA scenarios. Optionally MetalLB so `LoadBalancer` services get IPs from a slice of the bridge subnet.
 
-**Result:** A complete cluster ready for every Day 1 through Day 14 scenario in the Mumshad course.
+**Time:** 5-10 min. **Result:** A complete cluster ready for every Day 1 through Day 14 scenario in the Mumshad course.
 
 ## Component Versions
 
@@ -122,9 +122,9 @@ Installs the same set of services as the single-node `06-cluster-services.md`, a
 |-----------|---------|-------|
 | Ubuntu (guest) | 24.04 LTS | Cloud image, headless |
 | Kubernetes | v1.35.3 | CKA exam target version, installed via `kubeadm` |
-| containerd | v2.1.3 | Same as single-node guide |
-| runc | v1.3.0 | Same as single-node guide |
-| cri-tools (crictl) | v1.35.0 | Matches Kubernetes minor version |
+| containerd | Ubuntu 24.04 apt | |
+| runc | Ubuntu 24.04 apt | containerd dependency |
+| cri-tools (crictl) | v1.35.0 | |
 | CNI plugins (binaries) | v1.7.1 | Required by Calico |
 | Calico | v3.31.0 | Tigera operator install |
 
@@ -132,11 +132,11 @@ Installs the same set of services as the single-node `06-cluster-services.md`, a
 
 | CIDR | Purpose | Where It Appears |
 |------|---------|------------------|
-| `192.168.122.0/24` | Host bridge `br0` | VM IPs (`192.168.122.10`, `.11`), host gateway (`192.168.122.1`), MetalLB pool slice (optional) |
+| `192.168.100.0/24` | Lab-VMs VLAN 100, bridge `br-vm` | VM IPs (`.10`, `.11`), host bridge at `192.168.100.2`, UCG-Fiber gateway at `192.168.100.1`, MetalLB pool slice (optional) |
 | `10.96.0.0/16` | Service ClusterIPs | `kubeadm` `serviceSubnet`, CoreDNS `10.96.0.10`, API server `10.96.0.1` |
 | `10.244.0.0/16` | Pod IPs | `kubeadm` `podSubnet`, Calico IPPool `cidr` |
 
-The bridge subnet `192.168.122.0/24` matches what libvirt's default network uses. If you already run libvirt VMs on `virbr0`, the host bridge setup in document 01 includes a check and a path to reuse `virbr0` instead of building `br0` from scratch.
+The bridge subnet `192.168.100.0/24` matches what libvirt's default network uses. If you already run libvirt VMs on `virbr-vm`, the host bridge setup in document 01 includes a check and a path to reuse `virbr-vm` instead of building `br-vm` from scratch.
 
 ## What This Guide Does Not Cover
 

@@ -2,7 +2,7 @@
 
 **Based on:** [03-control-plane.md](../../vm/docs/03-control-plane.md) of the single-node guide (replaced wholesale by `kubeadm`) and the upstream [kubeadm init documentation](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/).
 
-**Purpose:** Bring up the entire control plane (etcd, kube-apiserver, kube-controller-manager, kube-scheduler) on `node1` with one `kubeadm init` command driven by a YAML config. This is the equivalent of single-node documents 02 and 03 combined, compressed from a hundred-plus commands into one.
+**Purpose:** Bring up the entire control plane (etcd, kube-apiserver, kube-controller-manager, kube-scheduler) on `controlplane-1` with one `kubeadm init` command driven by a YAML config. This is the equivalent of single-node documents 02 and 03 combined, compressed from a hundred-plus commands into one.
 
 ---
 
@@ -23,13 +23,16 @@ The control plane node is left untainted in this guide so workloads can also sch
 
 ## Prerequisites
 
-`node1` from the previous document must have containerd running and `kubeadm`, `kubelet`, `kubectl` installed at v1.35.3. SSH into `node1` before proceeding.
+`controlplane-1` from the previous document must have containerd running and `kubeadm`, `kubelet`, `kubectl` installed at v1.35.3. SSH into `controlplane-1` before proceeding.
 
 ```bash
-ssh node1
+ssh controlplane-1
 systemctl is-active containerd
 kubeadm version -o short    # v1.35.3
 ```
+
+
+All verification commands in Parts 3-6 that reference `192.168.100.10` must use your actual controlplane-1 IP.
 
 ---
 
@@ -42,20 +45,20 @@ cat > ~/kubeadm-init.yaml <<'EOF'
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration
 localAPIEndpoint:
-  advertiseAddress: 192.168.122.10
+  advertiseAddress: 192.168.100.10
   bindPort: 6443
 nodeRegistration:
-  name: node1
+  name: controlplane-1
   criSocket: unix:///run/containerd/containerd.sock
   kubeletExtraArgs:
     - name: node-ip
-      value: 192.168.122.10
+      value: 192.168.100.10
 ---
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration
 kubernetesVersion: v1.35.3
 clusterName: cka-twonode
-controlPlaneEndpoint: 192.168.122.10:6443
+controlPlaneEndpoint: 192.168.100.10:6443
 networking:
   serviceSubnet: 10.96.0.0/16
   podSubnet: 10.244.0.0/16
@@ -65,9 +68,9 @@ apiServer:
     - name: authorization-mode
       value: Node,RBAC
   certSANs:
-    - 192.168.122.10
-    - node1
-    - node1.cka.local
+    - 192.168.100.10
+    - controlplane-1
+    - controlplane-1.cka.local
 controllerManager:
   extraArgs:
     - name: bind-address
@@ -85,7 +88,7 @@ EOF
 
 A few details worth noting:
 
-- `advertiseAddress` and `node-ip` both point at `192.168.122.10`. With a single network interface the default would work, but setting them explicitly removes ambiguity and matches what you would do in any environment with multiple interfaces.
+- `advertiseAddress` and `node-ip` both point at `192.168.100.10`. With a single network interface the default would work, but setting them explicitly removes ambiguity and matches what you would do in any environment with multiple interfaces.
 - `podSubnet: 10.244.0.0/16` matches the Calico install in document 05. If you change one, change the other.
 - `controlPlaneEndpoint` is set even on a single control plane node so that worker join tokens reference a stable name. It also means the cluster could grow to HA later without re-issuing certificates.
 - `cgroupDriver: systemd` matches the containerd config from document 03. A mismatch here is one of the most common `kubeadm init` failure modes.
@@ -108,20 +111,20 @@ To start using your cluster, you need to run the following as a regular user:
   sudo chown $(id -u):$(id -g) $HOME/.kube/config
 ```
 
-The second shows the join command for `node2`:
+The second shows the join command for `nodes-1`:
 
 ```
 You can now join any number of worker nodes by running the following on each as root:
 
-kubeadm join 192.168.122.10:6443 --token abcdef.0123456789abcdef \
+kubeadm join 192.168.100.10:6443 --token abcdef.0123456789abcdef \
         --discovery-token-ca-cert-hash sha256:1234...
 ```
 
-Save that join command somewhere. You will need it on `node2` in document 06. If you lose it, you can regenerate later with `kubeadm token create --print-join-command`.
+Save that join command somewhere. You will need it on `nodes-1` in document 06. If you lose it, you can regenerate later with `kubeadm token create --print-join-command`.
 
 ## Part 3: Set Up kubectl Access
 
-Run on `node1` as the `kube` user:
+Run on `controlplane-1` as the `kube` user:
 
 ```bash
 mkdir -p ~/.kube
@@ -133,7 +136,7 @@ kubectl cluster-info
 kubectl get nodes
 ```
 
-`kubectl get nodes` should show `node1` with status `NotReady` and role `control-plane`. `NotReady` is expected at this stage: there is no CNI yet, so kubelet refuses to mark the node Ready. Document 05 fixes that.
+`kubectl get nodes` should show `controlplane-1` with status `NotReady` and role `control-plane`. `NotReady` is expected at this stage: there is no CNI yet, so kubelet refuses to mark the node Ready. Document 05 fixes that.
 
 ## Part 4: Copy admin.conf to the Host
 
@@ -142,21 +145,27 @@ For working from your dev machine instead of SSH'ing in every time:
 ```bash
 # From the host
 mkdir -p ~/cka-lab/two-kubeadm
-scp node1:/home/kube/.kube/config ~/cka-lab/two-kubeadm/admin.conf
+scp controlplane-1:/home/kube/.kube/config ~/cka-lab/two-kubeadm/admin.conf
 
 # Use it
 export KUBECONFIG=~/cka-lab/two-kubeadm/admin.conf
 kubectl get nodes
 ```
 
-The `admin.conf` already references `192.168.122.10:6443` because of `controlPlaneEndpoint`, so no edits are needed.
+The `admin.conf` already references `192.168.100.10:6443` because of `controlPlaneEndpoint`, so no edits are needed.
 
 ## Part 5: Verify Control Plane Components
 
 All four control plane components run as static pods in the `kube-system` namespace, defined by manifests in `/etc/kubernetes/manifests/`. kubelet watches that directory and creates a pod for each file.
 
+`etcdctl` is not included in the Kubernetes apt repo. Install it from the Ubuntu package on `controlplane-1` before running the etcd health check below:
+
 ```bash
-# Static pod manifests (on node1)
+sudo apt-get install -y etcd-client
+```
+
+```bash
+# Static pod manifests (on controlplane-1)
 sudo ls -la /etc/kubernetes/manifests/
 # Should list: etcd.yaml, kube-apiserver.yaml,
 #              kube-controller-manager.yaml, kube-scheduler.yaml
@@ -165,7 +174,7 @@ sudo ls -la /etc/kubernetes/manifests/
 kubectl -n kube-system get pods -o wide
 
 # Component health endpoints
-curl -k https://192.168.122.10:6443/healthz
+curl -k https://192.168.100.10:6443/healthz
 curl -k https://127.0.0.1:10257/healthz   # controller-manager
 curl -k https://127.0.0.1:10259/healthz   # scheduler
 
@@ -230,8 +239,12 @@ The control plane is up and reachable:
 | Component | Manifest | Health Endpoint |
 |-----------|----------|-----------------|
 | etcd | `/etc/kubernetes/manifests/etcd.yaml` | etcdctl endpoint health |
-| kube-apiserver | `/etc/kubernetes/manifests/kube-apiserver.yaml` | `https://192.168.122.10:6443/healthz` |
+| kube-apiserver | `/etc/kubernetes/manifests/kube-apiserver.yaml` | `https://192.168.100.10:6443/healthz` |
 | kube-controller-manager | `/etc/kubernetes/manifests/kube-controller-manager.yaml` | `https://127.0.0.1:10257/healthz` |
 | kube-scheduler | `/etc/kubernetes/manifests/kube-scheduler.yaml` | `https://127.0.0.1:10259/healthz` |
 
-`kubectl get nodes` shows `node1` as `NotReady`. The next document installs Calico to make the node `Ready` and enable pod networking.
+`kubectl get nodes` shows `controlplane-1` as `NotReady`. The next document installs Calico to make the node `Ready` and enable pod networking.
+
+---
+
+← [Previous: Installing Container Runtime and kubeadm Toolchain](03-node-prerequisites.md) | [Next: Installing Calico as the Cluster CNI →](05-cni-installation.md)

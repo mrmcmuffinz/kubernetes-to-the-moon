@@ -8,12 +8,12 @@ A step-by-step guide for bootstrapping a single-node Kubernetes cluster on a QEM
 
 Follow these in order. The VM creation is reused from `single-systemd/01-qemu-vm-setup.md`.
 
-| # | Document | What It Does |
-|---|----------|-------------|
-| 01 | [Node Prerequisites](01-node-prerequisites.md) | Installs containerd, runc, CNI binaries, crictl, and the `kubeadm`/`kubelet`/`kubectl` toolchain |
-| 02 | [Control Plane Init](02-control-plane-init.md) | Runs `kubeadm init` with a YAML config, sets up `kubectl`, removes the control plane taint |
-| 03 | [CNI Installation](03-cni-installation.md) | Installs Calico via the Tigera operator, verifies pod networking and `NetworkPolicy` |
-| 04 | [Cluster Services](04-cluster-services.md) | Installs Helm, `local-path-provisioner`, `metrics-server` |
+| # | Document | What It Does | Time |
+|---|----------|-------------|------|
+| 01 | [Node Prerequisites](01-node-prerequisites.md) | Installs containerd, runc, CNI binaries, crictl, and the `kubeadm`/`kubelet`/`kubectl` toolchain | 15-20 min |
+| 02 | [Control Plane Init](02-control-plane-init.md) | Runs `kubeadm init` with a YAML config, sets up `kubectl`, removes the control plane taint | 10-15 min |
+| 03 | [CNI Installation](03-cni-installation.md) | Installs Calico via the Tigera operator, verifies pod networking and `NetworkPolicy` | 5-10 min |
+| 04 | [Cluster Services](04-cluster-services.md) | Installs Helm, `local-path-provisioner`, `metrics-server` | 5-10 min |
 
 ## Component Versions
 
@@ -21,8 +21,8 @@ Follow these in order. The VM creation is reused from `single-systemd/01-qemu-vm
 |-----------|---------|
 | Ubuntu (guest) | 24.04 LTS |
 | Kubernetes | v1.35.3 |
-| containerd | v2.1.3 |
-| runc | v1.3.0 |
+| containerd | Ubuntu 24.04 apt |
+| runc | Ubuntu 24.04 apt |
 | cri-tools (crictl) | v1.35.0 |
 | CNI plugins | v1.7.1 |
 | Calico | v3.31.0 |
@@ -33,7 +33,7 @@ Kubernetes v1.35 is the version the CKA exam currently targets.
 
 | CIDR | Purpose | Where It Appears |
 |------|---------|------------------|
-| `10.96.0.0/16` | Service ClusterIP range | kubeadm `serviceSubnet`, CoreDNS ClusterIP (`10.96.0.10`), `kubernetes` Service (`10.96.0.1`) |
+| `10.96.0.0/16` | Service ClusterIP range | kubeadm `serviceSubnet`, CoreDNS ClusterIP (`10.96.0.10`), kubelet `clusterDNS`, `kubernetes` Service (`10.96.0.1`) |
 | `10.244.0.0/16` | Pod IP range | kubeadm `podSubnet`, Calico IPPool `cidr` |
 | `10.0.2.0/24` | QEMU guest network | VM gets `10.0.2.15` via DHCP |
 
@@ -44,8 +44,8 @@ Kubernetes v1.35 is the version the CKA exam currently targets.
 | SSH into VM | `ssh kube@127.0.0.1 -p 2222` |
 | API server from host | `curl -k https://127.0.0.1:6443/healthz` |
 | `kubectl` from host | Copy `/etc/kubernetes/admin.conf` from VM, use as kubeconfig |
-| VM console log | `tail -f ~/cka-lab/node1/node1-console.log` |
-| Stop VM | `~/cka-lab/node1/stop-node1.sh` |
+| VM console log | `tail -f ~/cka-lab/controlplane-1/controlplane-1-console.log` |
+| Stop VM | `~/cka-lab/controlplane-1/stop-controlplane-1.sh` |
 
 Default VM credentials: user `kube`, password `kubeadmin`.
 
@@ -69,3 +69,7 @@ The two guides are complementary, not redundant. `single-systemd` shows what `ku
 ## Scope
 
 Single-node cluster only. The control plane is left untainted so workloads can also schedule on the same node. Multi-node `kubeadm` setup is covered in `cka/vm/two-kubeadm`.
+
+---
+
+[Next: Installing Container Runtime and kubeadm Toolchain (Single Node) →](01-node-prerequisites.md)

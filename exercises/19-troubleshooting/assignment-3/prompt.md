@@ -1,153 +1,175 @@
-I need you to create a comprehensive Kubernetes homework assignment to help me practice **Node and Kubelet Troubleshooting**.
+# Troubleshooting Assignment 3: Node and Kubelet Troubleshooting (Hands-On Breaking Exercises)
 
-CONTEXT:
-- I'm studying for the CKA (Certified Kubernetes Administrator) exam
-- I'm using a kind cluster with nerdctl (rootless containers, not Docker)
-- I have completed cluster-lifecycle assignments
-- I want to build real-world skills, not just pass the exam
+**Series:** Troubleshooting (3 of 4)
+**Assignment number:** 3
+**Prerequisites:** 17-cluster-lifecycle/assignment-1, 17-cluster-lifecycle/assignment-2
+**CKA Domain:** Troubleshooting (30%)
+**CKA Competencies:** Troubleshoot clusters and nodes, troubleshoot cluster component failure
+**Course sections:** S14 (lectures 292-294 Worker node failure)
 
-SCOPE (IMPORTANT):
-This assignment covers node and kubelet troubleshooting: node NotReady, kubelet failures, container runtime issues, node conditions, and node recovery. Application and control plane troubleshooting are covered in assignments 1 and 2. Network troubleshooting is covered in assignment-4.
+---
 
-**In scope for this assignment:**
+## Scope Declaration
+
+### In Scope for This Assignment
+
+This assignment provides **hands-on kubelet and node breaking exercises** following the same pattern as assignment-2 (control plane troubleshooting). Every exercise setup intentionally breaks something on a worker node, and the task is to diagnose and fix it using real troubleshooting commands.
+
+*Kubelet Service Failures*
+- Kubelet stopped (systemctl stop kubelet)
+- Kubelet wrong binary path in systemd unit (Simulator B Q6 scenario)
+- Kubelet config file syntax errors
+- Kubelet port conflicts
+- Kubelet certificate issues preventing startup
 
 *Node NotReady Diagnosis*
-- kubectl describe node: conditions and events
-- Node conditions: Ready, MemoryPressure, DiskPressure, PIDPressure
-- Taints applied by conditions
-- Identifying root cause from conditions
-
-*Kubelet Not Running*
-- systemctl status kubelet
-- journalctl -u kubelet
-- Kubelet configuration issues
-- Certificate issues preventing kubelet startup
-- Container runtime not available
+- kubectl describe node for conditions and events
+- Node conditions: Ready=False with reason KubeletNotReady
+- Identifying root cause from kubelet logs
+- systemctl status kubelet on the node
+- journalctl -u kubelet for error messages
 
 *Container Runtime Issues*
-- Container runtime not running
-- containerd status and logs
-- Runtime configuration issues
-- Image pull failures at runtime level
+- containerd.sock missing or wrong path in kubelet config
+- containerd service stopped
+- Runtime endpoint configuration errors
+- CNI plugin issues causing network unavailable
 
-*Node Conditions*
-- MemoryPressure: node running low on memory
-- DiskPressure: node running low on disk
-- PIDPressure: node running low on PIDs
-- NetworkUnavailable: node network not configured
-- How conditions affect scheduling
+*Kubelet Configuration Errors*
+- Wrong kubeconfig path (--kubeconfig flag)
+- Wrong CA certificate path
+- Wrong static pod manifest directory
+- Invalid YAML in kubelet config file
+- Port already in use (healthz port, metrics port)
 
-*Taints from Node Conditions*
-- Automatic taints applied by node problems
-- node.kubernetes.io/not-ready
-- node.kubernetes.io/unreachable
-- node.kubernetes.io/memory-pressure
-- node.kubernetes.io/disk-pressure
+*Node Recovery Procedures*
+- Fixing kubelet systemd unit files
+- Restarting kubelet after config fix
+- Verifying node returns to Ready
+- Confirming pods can schedule on recovered node
+- Drain and uncordon workflows
 
-*Node Drain and Recovery*
-- Draining unhealthy node
-- Recovering node to Ready state
-- Uncordoning after recovery
-- Pod rescheduling after recovery
+### Out of Scope
 
-*Kubelet Configuration Issues*
-- Kubelet config file location
-- Common misconfigurations
-- Registration failures
-- Node labels and annotations
+The following topics are explicitly not covered in this assignment:
 
-**Out of scope (covered in other assignments, do not include):**
+- **Application-layer troubleshooting** (pod crashes, config errors): Covered in 19-troubleshooting/assignment-1
+- **Control plane troubleshooting** (API server, scheduler, controller-manager, etcd): Covered in 19-troubleshooting/assignment-2
+- **Network troubleshooting** (Service endpoints, DNS, NetworkPolicy): Covered in 19-troubleshooting/assignment-4
+- **Node upgrades and kubeadm**: Covered in 17-cluster-lifecycle/assignment-2
+- **Real hardware node conditions** (actual MemoryPressure, DiskPressure): Not hands-on reproducible in kind, covered conceptually in tutorial only
 
-- Application troubleshooting (exercises/19-19-troubleshooting/assignment-1)
-- Control plane troubleshooting (exercises/19-19-troubleshooting/assignment-2)
-- Network troubleshooting (exercises/19-19-troubleshooting/assignment-4)
-- Node drain for upgrades (exercises/17-17-cluster-lifecycle/assignment-2)
+---
 
-ASSIGNMENT REQUIREMENTS:
+## Environment Requirements
 
-1. **Tutorial File (Separate from Exercises)**
-   - Create a standalone tutorial file: troubleshooting-tutorial.md (section 3)
-   - Explain node architecture and kubelet role
-   - Show NotReady diagnosis workflow
-   - Demonstrate kubelet troubleshooting
-   - Explain node conditions and taints
-   - Cover recovery procedures
-   - Note kind-specific behavior
+**Cluster:** Multi-node kind cluster (1 control-plane + 3 workers) to allow safely breaking worker nodes
 
-2. **Homework Exercises File (15 Progressive Exercises)**
-   - Create the exercises file: troubleshooting-homework.md
-   - 15 exercises across 5 difficulty levels (3 exercises per level)
-   - All exercises are debugging exercises
-   - Exercise headings are bare (### Exercise 1.1, etc.)
+**Tools:** kubectl, nerdctl (for node access), systemctl, journalctl, crictl
 
-   **Level 1 (Exercises 1.1-1.3): Node Status**
-   - Check node conditions
-   - Identify NotReady node
-   - View node events
+**Node access:** All exercises use `nerdctl exec kind-worker bash` to access worker nodes and break kubelet
 
-   **Level 2 (Exercises 2.1-2.3): Kubelet Issues**
-   - Check kubelet status
-   - View kubelet logs
-   - Identify kubelet configuration issue
+**Critical safety:** Never break the control-plane node. All exercises break worker nodes only.
 
-   **Level 3 (Exercises 3.1-3.3): Node Failures**
-   - Node with memory pressure
-   - Node with disk pressure
-   - Container runtime issue
+---
 
-   **Level 4 (Exercises 4.1-4.3): Recovery**
-   - Drain and recover node
-   - Fix kubelet configuration
-   - Verify node recovery
+## Resource Gate
 
-   **Level 5 (Exercises 5.1-5.3): Complex Scenarios**
-   - Multiple node issues
-   - Node causing workload failures
-   - Full node recovery procedure
+All CKA resources are in scope (troubleshooting is a capstone assignment).
 
-3. **Answer Key File**
-   - Create the answer key: troubleshooting-homework-answers.md
-   - Full diagnostic workflow for each exercise
-   - Node troubleshooting flowcharts
-   - Common mistakes in diagnosis
+---
 
-4. **README File for the Assignment**
-   - Create: README.md
-   - Overview of Node and Kubelet Troubleshooting assignment
-   - Prerequisites: cluster-lifecycle
-   - Estimated time commitment: 6-8 hours
-   - Cluster requirements: multi-node kind cluster
-   - Kind limitations note
-   - Recommended workflow
+## Topic-Specific Conventions
 
-ENVIRONMENT REQUIREMENTS:
-- Multi-node kind cluster (3+ workers to safely drain)
-- Access to node containers via nerdctl exec
-- kubectl client
+**Exercise structure (following assignment-2 pattern):**
+- Setup: Commands that break the kubelet/node (run these to create the failure)
+- Objective: Brief statement of what is broken (bare, no hints)
+- Task: What to diagnose and fix
+- Verification: Commands showing the fix worked
 
-KIND CLUSTER NOTE:
-Kind nodes are containers, not VMs or bare-metal. Kubelet runs inside the kind container. Some exercises may be conceptual or require kind-specific approaches. Clearly identify differences from real clusters.
+**Kubelet breaking patterns:**
+- Level 1: Service stopped, obvious failures (systemctl status shows inactive)
+- Level 2: Configuration errors (wrong paths, wrong flags, syntax errors)
+- Level 3: Certificate and auth issues, runtime connectivity
+- Level 4: Multi-component failures (kubelet + runtime, kubelet + config + certs)
+- Level 5: Complex scenarios requiring full diagnostic workflow
 
-RESOURCE GATE:
-All CKA resources are in scope (generation order 37):
-- All Kubernetes resources
-- Node access
-- Kubelet and runtime
+**Node targeting:**
+- Exercise 1.1, 1.2, 1.3: kind-worker
+- Exercise 2.1, 2.2, 2.3: kind-worker2
+- Exercise 3.1, 3.2, 3.3: kind-worker3
+- Exercise 4.1, 4.2, 4.3: kind-worker (reuse after recovery)
+- Exercise 5.1, 5.2, 5.3: Multiple workers, complex scenarios
 
-CONVENTIONS:
-- No em dashes anywhere.
-- Narrative paragraph flow in prose sections.
-- Exercise namespaces follow `ex-<level>-<exercise>` pattern.
-- Tutorial namespace is `tutorial-troubleshooting`.
-- ALL exercise headings are bare.
-- Full file replacements when generating.
+**Recovery verification pattern:**
+- Node reaches Ready status
+- Create test pod that schedules on the recovered node
+- Verify pod runs successfully
+- Clean up test pod
 
-CROSS-REFERENCES:
-- **Prerequisites:**
-  - exercises/17-cluster-lifecycle/ assignments
+**Common mistakes to anticipate:**
+- Not checking node from kubectl perspective before SSHing to node
+- Fixing config but not restarting kubelet (systemctl restart kubelet)
+- Fixing systemd unit but not running daemon-reload
+- Looking at control-plane kubelet logs instead of worker node logs
+- Not verifying node is Ready after fix
 
-- **Follow-up assignments:**
-  - exercises/19-19-troubleshooting/assignment-4: Network troubleshooting
+---
 
-COURSE MATERIAL REFERENCE:
-- S14 (Lectures 292-294): Worker node failure
+## Cross-References
+
+**Backward references (prerequisites):**
+- 17-cluster-lifecycle/assignment-1: kubeadm cluster setup, understanding kubelet role
+- 17-cluster-lifecycle/assignment-2: Node drain/uncordon (used in recovery exercises)
+
+**Forward references:**
+- 19-troubleshooting/assignment-4: Network troubleshooting (CNI issues, kube-proxy)
+
+---
+
+## Notes for the Homework Generator
+
+**Exercise type distribution:**
+- 15 debugging exercises, all hands-on breaking scenarios
+- 0 conceptual "describe how to" exercises (this is not assignment-3's old pattern)
+- Every exercise setup includes actual breaking commands
+- Every exercise task requires diagnosis → fix → verification
+
+**Verification approach:**
+- kubectl get nodes shows node Ready
+- systemctl status kubelet shows active (running)
+- Test pod schedules and runs on recovered node
+- journalctl -u kubelet shows no errors after fix
+
+**Tutorial content requirements:**
+- Show full diagnostic workflow: kubectl describe node → identify KubeletNotReady → nerdctl exec to node → systemctl status → journalctl -u kubelet → fix → restart → verify
+- Explain kubelet systemd unit structure (/usr/lib/systemd/system/kubelet.service.d/)
+- Document common kubelet config file locations
+- Show how to distinguish kubelet issues from runtime issues
+- Include Simulator B Q6 scenario (wrong binary path) in tutorial examples
+
+**Answer key requirements:**
+- Three-stage structure for debugging exercises: diagnosis (commands to run), explanation (what is broken and why), fix (corrected config + restart commands)
+- Show both quick fix (restore from backup) and diagnostic fix (identify and correct the error)
+- Common mistakes section covering systemd reload, kubelet restart, checking wrong node
+
+**Integration with existing assignments:**
+- Reference assignment-2's control plane troubleshooting workflow (similar diagnostic approach)
+- Reference cluster-lifecycle assignments for kubelet architecture understanding
+- Use same bare heading convention as assignment-1 and assignment-2
+
+**Specific breaking scenarios to include:**
+- Exercise covering Simulator B Q6: kubelet binary path wrong in systemd unit (ExecStart=/usr/share/bin/kubelet instead of /usr/bin/kubelet)
+- Exercise covering kubelet kubeconfig path wrong
+- Exercise covering containerd socket path wrong in kubelet config
+- Exercise covering kubelet stopped (simplest failure)
+- Exercise covering kubelet config file syntax error (invalid YAML)
+- Exercise covering kubelet CA cert path wrong
+- Exercise covering multiple simultaneous issues (kubelet stopped + config error)
+
+**Kind-specific notes:**
+- Access nodes via nerdctl exec kind-<node-name> bash
+- Systemd is available inside kind nodes
+- Kubelet runs as systemd service inside the container
+- Some real-world node conditions (MemoryPressure, DiskPressure) are difficult to reproduce in kind but the diagnostic workflow is the same
+- CNI issues may require different troubleshooting in kind vs real clusters

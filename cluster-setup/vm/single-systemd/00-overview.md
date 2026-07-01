@@ -8,14 +8,14 @@ A step-by-step guide for bootstrapping a single-node Kubernetes cluster from scr
 
 Follow these in order. Each document builds on the previous one.
 
-| # | Document | What It Does |
-|---|----------|-------------|
-| 01 | [QEMU VM Setup](01-qemu-vm-setup.md) | Verifies the QEMU/KVM stack on the host, creates a headless Ubuntu 24.04 VM with cloud-init, configures port forwarding for SSH and Kubernetes APIs |
-| 02 | [Bootstrapping Security](02-bootstrapping-security.md) | Generates a root CA, TLS certificates for all components, kubeconfig files, and the etcd encryption key |
-| 03 | [Control Plane](03-control-plane.md) | Installs etcd, kube-apiserver, kube-controller-manager, and kube-scheduler as systemd services |
-| 04 | [Container Runtime](04-container-runtime.md) | Installs containerd, runc, and crictl |
-| 05 | [Worker Components](05-worker-components.md) | Installs CNI plugins (bridge + loopback), kubelet, kube-proxy, and RBAC rules. Schedules a test pod to verify the cluster |
-| 06 | [Cluster Services](06-cluster-services.md) | Installs Helm, CoreDNS for cluster DNS, and optionally local-path-provisioner for PersistentVolumeClaims |
+| # | Document | What It Does | Time |
+|---|----------|-------------|------|
+| 01 | [QEMU VM Setup](01-qemu-vm-setup.md) | Verifies the QEMU/KVM stack on the host, creates a headless Ubuntu 24.04 VM with cloud-init, configures port forwarding for SSH and Kubernetes APIs | 25-35 min |
+| 02 | [Bootstrapping Security](02-bootstrapping-security.md) | Generates a root CA, TLS certificates for all components, kubeconfig files, and the etcd encryption key | 30-40 min |
+| 03 | [Control Plane](03-control-plane.md) | Installs etcd, kube-apiserver, kube-controller-manager, and kube-scheduler as systemd services | 35-45 min |
+| 04 | [Container Runtime](04-container-runtime.md) | Installs containerd, runc, and crictl | 10-15 min |
+| 05 | [Worker Components](05-worker-components.md) | Installs CNI plugins (bridge + loopback), kubelet, kube-proxy, and RBAC rules. Schedules a test pod to verify the cluster | 20-30 min |
+| 06 | [Cluster Services](06-cluster-services.md) | Installs Helm, CoreDNS for cluster DNS, and optionally local-path-provisioner for PersistentVolumeClaims | 20-30 min |
 
 ## Component Versions
 
@@ -47,8 +47,8 @@ Two IP ranges are used throughout the documents and must stay consistent:
 | SSH into VM | `ssh kube@127.0.0.1 -p 2222` |
 | API server from host | `curl -k https://127.0.0.1:6443/healthz` |
 | kubectl from host | Copy kubeconfig from VM, set server to `https://127.0.0.1:6443` |
-| VM console log | `tail -f ~/cka-lab/node1/node1-console.log` |
-| Stop VM | `~/cka-lab/node1/stop-node1.sh` |
+| VM console log | `tail -f ~/cka-lab/controlplane-1/controlplane-1-console.log` |
+| Stop VM | `~/cka-lab/controlplane-1/stop-controlplane-1.sh` |
 
 Default VM credentials: user `kube`, password `kubeadmin`.
 

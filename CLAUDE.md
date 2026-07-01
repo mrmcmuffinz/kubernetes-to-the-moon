@@ -30,6 +30,8 @@ Mannambeth Udemy CKA course and KodeKloud labs.
 
 Two skills in `.claude/skills/` support the assignment generation pipeline.
 
+**IMPORTANT**: The k8s-homework-generator skill MUST be executed via the Agent tool, not by manually generating content inline. See `.claude/AGENT_DELEGATION_GUIDE.md` for the complete decision tree on when to delegate vs do-it-yourself.
+
 ### cka-prompt-builder
 
 Produces topic-level README.md files (scoping how many assignments a topic needs) and
@@ -49,6 +51,10 @@ Reference files in `.claude/skills/cka-prompt-builder/references/`:
 Takes a `prompt.md` and produces four content files (README.md, tutorial, homework,
 answers). It encodes all structural conventions: difficulty levels, anti-spoiler rules,
 exercise format, environment assumptions.
+
+**IMPORTANT: This skill MUST be executed via the Agent tool.** Each assignment generates
+5,000-15,000 words across 4 files with complex quality gates. Do not manually write
+tutorial/homework content inline - always spawn an agent to invoke the skill.
 
 Reference file in `.claude/skills/k8s-homework-generator/references/`:
 - `base-template.md` has the full structural contract for assignment output with hard

@@ -472,12 +472,19 @@ openssl verify -CAfile /var/lib/kubernetes/ca.pem /var/lib/kubernetes/kubernetes
 If multiple components are broken and you need to restart everything, follow this order:
 
 ```bash
+# Control plane
 sudo systemctl restart etcd
 sleep 3
 sudo systemctl restart kube-apiserver
 sleep 3
 sudo systemctl restart kube-controller-manager
 sudo systemctl restart kube-scheduler
+
+# Worker components (if they were also affected)
+sudo systemctl restart containerd
+sleep 2
+sudo systemctl restart kubelet
+sudo systemctl restart kube-proxy
 ```
 
-etcd must come first because the API server depends on it. The API server must come before the controller-manager and scheduler because they depend on it. The controller-manager and scheduler have no dependency on each other and can start in either order.
+etcd must come first because the API server depends on it. The API server must come before the controller-manager and scheduler because they depend on it. The controller-manager and scheduler have no dependency on each other and can start in either order. If restarting kubelet, containerd must be running first because kubelet connects to it at startup via `containerd.socket`.

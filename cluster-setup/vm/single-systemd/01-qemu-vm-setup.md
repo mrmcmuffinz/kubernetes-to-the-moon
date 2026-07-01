@@ -147,8 +147,8 @@ The script creates the following layout under a configurable base directory:
 ```
 ~/cka-lab/
   images/                 # Downloaded cloud images (shared across VMs)
-  node1/                  # Per-node directory
-    node1.qcow2           # VM disk (backed by cloud image)
+  controlplane-1/                  # Per-node directory
+    controlplane-1.qcow2           # VM disk (backed by cloud image)
     seed.iso              # Cloud-init ISO
     cloud-init/           # cloud-init source files
       user-data
@@ -169,14 +169,14 @@ Save the following as `create-node.sh` and make it executable with `chmod +x cre
 # with port forwarding for host-to-VM access.
 #
 # Usage: ./create-node.sh [node-name]
-#   node-name defaults to "node1" if not provided.
+#   node-name defaults to "controlplane-1" if not provided.
 
 set -euo pipefail
 
 # -------------------------------------------------------------------
 # Configuration
 # -------------------------------------------------------------------
-NODE_NAME="${1:-node1}"
+NODE_NAME="${1:-controlplane-1}"
 BASE_DIR="$HOME/cka-lab"
 IMAGE_DIR="$BASE_DIR/images"
 NODE_DIR="$BASE_DIR/$NODE_NAME"
@@ -490,13 +490,13 @@ The script will download the Ubuntu cloud image on the first run (cached for sub
 **Start the VM** (daemonizes automatically, returns control to your shell immediately):
 
 ```bash
-~/cka-lab/node1/start-node1.sh
+~/cka-lab/controlplane-1/start-controlplane-1.sh
 ```
 
 **Watch the boot process** by tailing the console log. This is especially useful on first boot to confirm cloud-init completes successfully:
 
 ```bash
-tail -f ~/cka-lab/node1/node1-console.log
+tail -f ~/cka-lab/controlplane-1/controlplane-1-console.log
 ```
 
 **SSH into the VM** once boot completes (approximately 60 to 90 seconds on first boot, faster on subsequent boots):
@@ -510,14 +510,14 @@ The default credentials are user `kube` with password `kubeadmin`. You should ad
 **Stop the VM gracefully:**
 
 ```bash
-~/cka-lab/node1/stop-node1.sh
+~/cka-lab/controlplane-1/stop-controlplane-1.sh
 ```
 
 ### What Cloud-Init Pre-Configures
 
 The cloud-init configuration handles the baseline OS setup so that the VM is ready for a Kubernetes installation when you SSH in. Specifically, it performs the following:
 
-- Sets the hostname to the node name (e.g., `node1`).
+- Sets the hostname to the node name (e.g., `controlplane-1`).
 - Creates the `kube` user with passwordless sudo.
 - Enables password-based SSH for initial access.
 - Installs prerequisite packages that `kubeadm`, `kubelet`, and container runtimes commonly require: `socat`, `conntrack`, `ipset`, `curl`, `jq`, and others.
@@ -568,8 +568,8 @@ curl -k https://127.0.0.1:6443/healthz
 curl http://127.0.0.1:2379/health
 
 # kubectl from the host (copy the kubeconfig from the VM first)
-scp -P 2222 kube@127.0.0.1:~/.kube/config ~/.kube/cka-node1-config
-KUBECONFIG=~/.kube/cka-node1-config kubectl get nodes
+scp -P 2222 kube@127.0.0.1:~/.kube/config ~/.kube/cka-controlplane-1-config
+KUBECONFIG=~/.kube/cka-controlplane-1-config kubectl get nodes
 ```
 
 Note that for `kubectl` from the host to work, the kubeconfig's `server` field must point to `https://127.0.0.1:6443` (which it will, since that is the forwarded port). If `kubeadm init` writes the internal VM IP instead, update the kubeconfig after copying it.

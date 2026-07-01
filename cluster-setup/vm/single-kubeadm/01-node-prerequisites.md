@@ -1,20 +1,18 @@
 # Installing Container Runtime and kubeadm Toolchain (Single Node)
 
-**Based on:** [04-container-runtime.md](../../single-systemd/04-container-runtime.md) of the systemd guide and the upstream [kubeadm install documentation](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/).
+**Based on:** The upstream [kubeadm install documentation](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/).
 
-**Adapted for:** A `kubeadm`-installed cluster. The container runtime install is unchanged from the systemd guide. New material is the apt-pinned `kubeadm`, `kubelet`, `kubectl` packages.
+**Purpose:** Install containerd and crictl via apt, CNI plugin binaries from the upstream release, and the apt-pinned `kubeadm`, `kubelet`, `kubectl` packages.
 
 ---
 
 ## What This Chapter Does
 
-Before `kubeadm init` can run, the node needs a working container runtime and the `kubeadm` toolchain at the matching version. The container runtime stack (containerd, runc, crictl) is identical to what `single-systemd/04-container-runtime.md` installed. This document also installs the CNI plugin binaries (Calico calls them in document 03) and the `kubeadm`, `kubelet`, `kubectl` packages from the upstream Kubernetes apt repo.
+Before `kubeadm init` can run, the node needs a working container runtime and the `kubeadm` toolchain at the matching version. This document installs containerd and crictl via apt, the CNI plugin binaries from the upstream release (Calico calls them in document 03), and the `kubeadm`, `kubelet`, `kubectl` packages from the upstream Kubernetes apt repo.
 
 ## What Is Different from the systemd Guide
 
-The systemd guide installed every component as a raw binary and wrote systemd units by hand. This guide stops at the runtime layer (the same as before) and then switches to apt packages from `pkgs.k8s.io` for `kubeadm`, `kubelet`, and `kubectl`. The reason is simple: the CKA exam runs on `kubeadm` clusters, and `kubeadm`'s upgrade path expects the apt packaging.
-
-The container runtime install is identical to systemd document 04, repeated here so this guide is self-contained.
+The systemd guides install containerd as a raw binary and write the systemd unit by hand. This guide installs containerd via `apt` instead, which handles the systemd unit automatically and is the approach the kubernetes.io install docs show for Ubuntu. The `kubeadm`, `kubelet`, and `kubectl` packages also come from apt. The critical containerd configuration (`SystemdCgroup = true`, CRI socket path) is the same in both guides.
 
 ## Prerequisites
 
@@ -39,110 +37,59 @@ If any of those are wrong, see the cloud-init troubleshooting in `single-systemd
 
 ## Part 1: Container Runtime
 
-### Step 1: Shell Variables
+### Step 1: Install containerd
 
 ```bash
-arch=amd64
-k8s_version=1.35.3
+sudo apt-get update
+sudo apt-get install -y containerd
+```
+
+`apt install containerd` installs containerd and pulls in `runc` as a dependency. The systemd service unit is registered and started automatically.
+
+### Step 2: Download crictl and CNI Plugin Binaries
+
+`cri-tools` (crictl) is not in Ubuntu's default repos -- it lives in the Kubernetes apt repo, which is not added until Part 2. Install the binary directly. CNI plugin binaries are also not included in the apt containerd package.
+
+```bash
 cri_version=1.35.0
-runc_version=1.3.0
-containerd_version=2.1.3
 cni_plugins_version=1.7.1
-```
-
-### Step 2: Download the Binaries
-
-```bash
-crictl_archive=crictl-v${cri_version}-linux-${arch}.tar.gz
-containerd_archive=containerd-${containerd_version}-linux-${arch}.tar.gz
-cni_plugins_archive=cni-plugins-linux-${arch}-v${cni_plugins_version}.tgz
-
-wget -q --show-progress --https-only --timestamping \
-  "https://github.com/kubernetes-sigs/cri-tools/releases/download/v${cri_version}/${crictl_archive}" \
-  "https://github.com/opencontainers/runc/releases/download/v${runc_version}/runc.${arch}" \
-  "https://github.com/containerd/containerd/releases/download/v${containerd_version}/${containerd_archive}" \
-  "https://github.com/containernetworking/plugins/releases/download/v${cni_plugins_version}/${cni_plugins_archive}"
-```
-
-### Step 3: Install
-
-```bash
-# containerd
-mkdir -p containerd
-tar -xvf ${containerd_archive} -C containerd
-sudo cp containerd/bin/* /bin/
-
-# runc
-cp runc.${arch} runc
-chmod +x runc
-sudo cp runc /usr/local/bin/
+arch=amd64
 
 # crictl
-tar -xvf ${crictl_archive}
-chmod +x crictl
-sudo cp crictl /usr/local/bin/
+curl -fsSLo /tmp/crictl.tar.gz "https://github.com/kubernetes-sigs/cri-tools/releases/download/v${cri_version}/crictl-v${cri_version}-linux-${arch}.tar.gz"
+sudo tar -C /usr/local/bin -xzf /tmp/crictl.tar.gz
+rm /tmp/crictl.tar.gz
 
-# CNI plugin binaries (Calico calls these from inside its pod)
+# CNI plugins (Calico calls these from inside its pod)
 sudo mkdir -p /opt/cni/bin
-sudo tar -xvf ${cni_plugins_archive} -C /opt/cni/bin/
+curl -fsSLo /tmp/cni-plugins.tgz "https://github.com/containernetworking/plugins/releases/download/v${cni_plugins_version}/cni-plugins-linux-${arch}-v${cni_plugins_version}.tgz"
+sudo tar -C /opt/cni/bin -xzf /tmp/cni-plugins.tgz
+rm /tmp/cni-plugins.tgz
 ```
 
-### Step 4: Configure containerd
+### Step 3: Configure containerd
 
-Same configuration as systemd document 04. `SystemdCgroup = true` because Ubuntu uses systemd; running cgroupfs and systemd cgroup managers simultaneously causes instability.
+apt does not write a config file. Generate the defaults and enable the systemd cgroup driver:
 
 ```bash
-sudo mkdir -p /etc/containerd/
-
-cat <<EOF | sudo tee /etc/containerd/config.toml
-version = 3
-[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc]
-  runtime_type = 'io.containerd.runc.v2'
-  [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
-    SystemdCgroup = true
-    BinaryName = '/usr/local/bin/runc'
-EOF
+sudo mkdir -p /etc/containerd
+containerd config default | sudo tee /etc/containerd/config.toml > /dev/null
+sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
 ```
 
-### Step 5: systemd Unit
+`SystemdCgroup = true` is required because Ubuntu 24.04 uses systemd as the cgroup manager. Running cgroupfs and systemd managers simultaneously on the same node causes instability.
+
+### Step 4: Restart containerd
 
 ```bash
-cat <<EOF | sudo tee /etc/systemd/system/containerd.service
-[Unit]
-Description=containerd container runtime
-Documentation=https://containerd.io
-After=network.target
-
-[Service]
-ExecStartPre=/sbin/modprobe overlay
-ExecStart=/bin/containerd
-Restart=always
-RestartSec=5
-Delegate=yes
-KillMode=process
-OOMScoreAdjust=-999
-LimitNOFILE=1048576
-LimitNPROC=infinity
-LimitCORE=infinity
-
-[Install]
-WantedBy=multi-user.target
-EOF
-```
-
-### Step 6: Start
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable containerd
-sudo systemctl start containerd
+sudo systemctl restart containerd
 
 # Verify
 systemctl status containerd --no-pager
 sudo crictl --runtime-endpoint unix:///var/run/containerd/containerd.sock info | head -20
 ```
 
-### Step 7: crictl Default Endpoint
+### Step 5: crictl Default Endpoint
 
 `kubeadm init` uses `crictl` and expects to find the runtime endpoint without flags. Set it as the default:
 
@@ -262,10 +209,10 @@ All checks should pass before moving to document 02.
 
 The node is ready for `kubeadm init`:
 
-| Component | Binary Location | Purpose |
-|-----------|----------------|---------|
-| containerd | `/bin/containerd` | Container lifecycle daemon, CRI implementation |
-| runc | `/usr/local/bin/runc` | Low-level container executor (OCI runtime) |
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| containerd | `/usr/bin/containerd` (via apt) | Container lifecycle daemon, CRI implementation |
+| runc | `/usr/sbin/runc` (via apt) | Low-level container executor (OCI runtime) |
 | crictl | `/usr/local/bin/crictl` | CLI tool for container inspection |
 | CNI plugin binaries | `/opt/cni/bin/*` | Bridge, host-local, loopback, plus others Calico depends on |
 | kubeadm | `/usr/bin/kubeadm` | Cluster bootstrap and lifecycle tool |
@@ -273,3 +220,7 @@ The node is ready for `kubeadm init`:
 | kubectl | `/usr/bin/kubectl` | Kubernetes CLI |
 
 The next document runs `kubeadm init`.
+
+---
+
+← [Previous: Single-Node Kubernetes Cluster (kubeadm): Overview](00-overview.md) | [Next: Initializing the Control Plane with kubeadm (Single Node) →](02-control-plane-init.md)

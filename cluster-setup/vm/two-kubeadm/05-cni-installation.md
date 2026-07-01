@@ -8,7 +8,7 @@
 
 ## What This Chapter Does
 
-The control plane is up but `kubectl get nodes` shows `node1` as `NotReady` because there is no CNI. kubelet does not mark a node Ready until pod networking can be set up, which requires a CNI plugin to be present and a config file in `/etc/cni/net.d/`. This document installs Calico via the Tigera operator with a custom `Installation` resource, removes the control plane taint so workloads can run on `node1`, and verifies that `NetworkPolicy` is actually enforced.
+The control plane is up but `kubectl get nodes` shows `controlplane-1` as `NotReady` because there is no CNI. kubelet does not mark a node Ready until pod networking can be set up, which requires a CNI plugin to be present and a config file in `/etc/cni/net.d/`. This document installs Calico via the Tigera operator with a custom `Installation` resource, removes the control plane taint so workloads can run on `controlplane-1`, and verifies that `NetworkPolicy` is actually enforced.
 
 `NetworkPolicy` enforcement is the reason Calico is preferred over Flannel for the CKA. Flannel will let you create a `NetworkPolicy` resource without complaint and then silently ignore it. Any exam question that asks you to use `NetworkPolicy` to deny traffic will mark you wrong if your CNI does not enforce it.
 
@@ -20,7 +20,7 @@ Calico uses the same CNI plugin binaries you installed in document 03, plus its 
 
 ## Prerequisites
 
-`node1` is up and `kubectl get nodes` returns the single node in `NotReady` state. SSH into `node1` or use the kubeconfig from the host. The commands below assume `kubectl` is configured.
+`controlplane-1` is up and `kubectl get nodes` returns the single node in `NotReady` state. SSH into `controlplane-1` or use the kubeconfig from the host. The commands below assume `kubectl` is configured.
 
 ---
 
@@ -29,9 +29,9 @@ Calico uses the same CNI plugin binaries you installed in document 03, plus its 
 Calico's recommended install path is via the Tigera operator. The operator runs as a deployment in the `tigera-operator` namespace and manages Calico itself as Kubernetes resources.
 
 ```bash
-ssh node1
+ssh controlplane-1
 
-kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.0/manifests/tigera-operator.yaml
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.5/manifests/tigera-operator.yaml
 
 # Wait for the operator
 kubectl -n tigera-operator wait --for=condition=Available deployment/tigera-operator --timeout=120s
@@ -103,7 +103,7 @@ kubectl get pods -n calico-apiserver
 kubectl get nodes -o wide
 ```
 
-`node1` status should now be `Ready`. If it is still `NotReady` after a minute, check the kubelet logs:
+`controlplane-1` status should now be `Ready`. If it is still `NotReady` after a minute, check the kubelet logs:
 
 ```bash
 sudo journalctl -u kubelet -n 50 | grep -i 'cni\|network'
@@ -119,17 +119,17 @@ sudo cat /etc/cni/net.d/10-calico.conflist | head -10
 
 ## Part 5: Remove the Control Plane Taint
 
-By default, `kubeadm init` taints the control plane node with `node-role.kubernetes.io/control-plane:NoSchedule`. With only two nodes available, you want every pod to have somewhere to run if a worker is drained. The CKA exam frequently asks you to drain a node and verify pods reschedule; if `node1` is tainted and you drain `node2`, pods will go `Pending` instead of moving to `node1`.
+By default, `kubeadm init` taints the control plane node with `node-role.kubernetes.io/control-plane:NoSchedule`. With only two nodes available, you want every pod to have somewhere to run if a worker is drained. The CKA exam frequently asks you to drain a node and verify pods reschedule; if `controlplane-1` is tainted and you drain `nodes-1`, pods will go `Pending` instead of moving to `controlplane-1`.
 
 ```bash
 # Check current taints
-kubectl describe node node1 | grep -i taint
+kubectl describe node controlplane-1 | grep -i taint
 
 # Remove the control-plane NoSchedule taint
-kubectl taint nodes node1 node-role.kubernetes.io/control-plane:NoSchedule-
+kubectl taint nodes controlplane-1 node-role.kubernetes.io/control-plane:NoSchedule-
 
 # Verify
-kubectl describe node node1 | grep -i taint
+kubectl describe node controlplane-1 | grep -i taint
 # Expected: Taints: <none>
 ```
 
@@ -137,7 +137,7 @@ Re-tainting later is a single command, and worth knowing because the CKA exam te
 
 ```bash
 # To put the taint back later (for practice):
-kubectl taint nodes node1 node-role.kubernetes.io/control-plane=:NoSchedule
+kubectl taint nodes controlplane-1 node-role.kubernetes.io/control-plane=:NoSchedule
 ```
 
 ## Part 6: Pod Networking Smoke Test
@@ -217,4 +217,8 @@ The cluster now has working pod networking with `NetworkPolicy` enforcement:
 | `calico-kube-controllers` | `calico-system` | Watches Kubernetes resources and updates Calico state |
 | `calico-apiserver` | `calico-apiserver` | Aggregated API server for Calico-specific resources |
 
-`node1` is `Ready`, the control-plane taint is removed, and `NetworkPolicy` enforcement is verified. The next document joins `node2` to the cluster.
+`controlplane-1` is `Ready`, the control-plane taint is removed, and `NetworkPolicy` enforcement is verified. The next document joins `nodes-1` to the cluster.
+
+---
+
+← [Previous: Initializing the Control Plane with kubeadm](04-control-plane-init.md) | [Next: Joining the Worker Node →](06-worker-join.md)

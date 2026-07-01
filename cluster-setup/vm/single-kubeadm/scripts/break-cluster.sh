@@ -19,7 +19,7 @@
 #
 # Configuration:
 #   Set BREAK_SSH_CMD to override the default SSH command.
-#   Example: export BREAK_SSH_CMD="ssh node1"
+#   Example: export BREAK_SSH_CMD="ssh controlplane-1"
 #
 # After running, SSH into the VM and use kubectl, systemctl, journalctl, crictl,
 # and your knowledge of the cluster to diagnose and fix the problem.
@@ -31,7 +31,7 @@ TOTAL_SCENARIOS=15
 # -------------------------------------------------------------------
 # SSH configuration
 # Adjust if your SSH config differs.
-# If you have a Host entry in ~/.ssh/config, set BREAK_SSH_CMD="ssh node1".
+# If you have a Host entry in ~/.ssh/config, set BREAK_SSH_CMD="ssh controlplane-1".
 # -------------------------------------------------------------------
 SSH_CMD="${BREAK_SSH_CMD:-ssh -p 2222 kube@127.0.0.1}"
 
@@ -88,7 +88,7 @@ CONFIGURATION
         Override the default SSH command. Default: ssh -p 2222 kube@127.0.0.1
 
         Examples:
-            export BREAK_SSH_CMD="ssh node1"
+            export BREAK_SSH_CMD="ssh controlplane-1"
             export BREAK_SSH_CMD="ssh -p 2222 kube@127.0.0.1"
 
 EXAMPLES
@@ -217,89 +217,89 @@ list_scenarios() {
 # CKA-relevant troubleshooting skill.
 # -------------------------------------------------------------------
 
-# Bad etcd data-dir in static pod manifest
+# Difficulty: Beginner | Concept: etcd data directory path in static pod manifest | Symptom: etcd pod crashes; API server loses cluster state
 scenario_1() {
   backup_if_needed /etc/kubernetes/manifests/etcd.yaml
   run_on_vm "sed -i 's|--data-dir=/var/lib/etcd|--data-dir=/var/lib/etcd-bad|' /etc/kubernetes/manifests/etcd.yaml" 2>/dev/null || true
 }
 
-# Wrong etcd endpoint in apiserver static pod manifest
+# Difficulty: Beginner | Concept: etcd endpoint URL in kube-apiserver manifest | Symptom: API server pod restarts; logs show connection refused
 scenario_2() {
   backup_if_needed /etc/kubernetes/manifests/kube-apiserver.yaml
   run_on_vm "sed -i 's|--etcd-servers=https://127.0.0.1:2379|--etcd-servers=https://127.0.0.1:9999|' /etc/kubernetes/manifests/kube-apiserver.yaml" 2>/dev/null || true
 }
 
-# Missing apiserver TLS cert path
+# Difficulty: Beginner | Concept: TLS certificate path in static pod manifest | Symptom: API server pod fails to start; logs show "no such file"
 scenario_3() {
   backup_if_needed /etc/kubernetes/manifests/kube-apiserver.yaml
   run_on_vm "sed -i 's|--tls-cert-file=/etc/kubernetes/pki/apiserver.crt|--tls-cert-file=/etc/kubernetes/pki/missing.crt|' /etc/kubernetes/manifests/kube-apiserver.yaml" 2>/dev/null || true
 }
 
-# Wrong kubeconfig path in controller-manager static pod manifest
+# Difficulty: Intermediate | Concept: controller-manager kubeconfig path | Symptom: pod stays Running; deployments stop reconciling; failed pods not replaced
 scenario_4() {
   backup_if_needed /etc/kubernetes/manifests/kube-controller-manager.yaml
   run_on_vm "sed -i 's|--kubeconfig=/etc/kubernetes/controller-manager.conf|--kubeconfig=/etc/kubernetes/wrong.conf|' /etc/kubernetes/manifests/kube-controller-manager.yaml" 2>/dev/null || true
 }
 
-# Wrong kubeconfig path in scheduler static pod manifest
+# Difficulty: Intermediate | Concept: scheduler kubeconfig path | Symptom: scheduler pod fails; new pods stay Pending indefinitely
 scenario_5() {
   backup_if_needed /etc/kubernetes/manifests/kube-scheduler.yaml
   run_on_vm "sed -i 's|--kubeconfig=/etc/kubernetes/scheduler.conf|--kubeconfig=/etc/kubernetes/missing-scheduler.conf|' /etc/kubernetes/manifests/kube-scheduler.yaml" 2>/dev/null || true
 }
 
-# kubelet stopped and disabled (entire cluster goes down because kubelet manages static pods)
+# Difficulty: Beginner | Concept: kubelet as static pod manager | Symptom: entire control plane disappears; static pods are orphaned
 scenario_6() {
   run_on_vm "systemctl stop kubelet && systemctl disable kubelet" 2>/dev/null || true
 }
 
-# etcd CA hidden (signature validation will fail)
+# Difficulty: Advanced | Concept: etcd TLS certificate chain | Symptom: etcd pod restarts but cannot serve TLS; API server x509 errors
 scenario_7() {
   backup_if_needed /etc/kubernetes/pki/etcd/ca.crt
   run_on_vm "mv /etc/kubernetes/pki/etcd/ca.crt /etc/kubernetes/pki/etcd/ca.crt.hidden" 2>/dev/null || true
 }
 
-# Wrong service-cluster-ip-range in apiserver (DNS and existing Services break)
+# Difficulty: Advanced | Concept: service CIDR consistency | Symptom: API server runs; new services get wrong ClusterIPs; CoreDNS breaks
 scenario_8() {
   backup_if_needed /etc/kubernetes/manifests/kube-apiserver.yaml
   run_on_vm "sed -i 's|--service-cluster-ip-range=10.96.0.0/16|--service-cluster-ip-range=10.99.0.0/16|' /etc/kubernetes/manifests/kube-apiserver.yaml" 2>/dev/null || true
 }
 
-# containerd cgroup driver mismatch (kubelet expects systemd)
+# Difficulty: Intermediate | Concept: cgroup driver consistency | Symptom: node NotReady; new pods cannot start; kubelet logs cgroup errors
 scenario_9() {
   backup_if_needed /etc/containerd/config.toml
   run_on_vm "sed -i 's|SystemdCgroup = true|SystemdCgroup = false|' /etc/containerd/config.toml && systemctl restart containerd" 2>/dev/null || true
 }
 
-# AlwaysDeny authorization mode in apiserver
+# Difficulty: Intermediate | Concept: API server authorization mode | Symptom: API server starts; every kubectl request returns 403 Forbidden
 scenario_10() {
   backup_if_needed /etc/kubernetes/manifests/kube-apiserver.yaml
   run_on_vm "sed -i 's|--authorization-mode=Node,RBAC|--authorization-mode=AlwaysDeny|' /etc/kubernetes/manifests/kube-apiserver.yaml" 2>/dev/null || true
 }
 
-# Wrong containerd socket in kubelet config
+# Difficulty: Intermediate | Concept: CRI socket path in kubelet config | Symptom: node NotReady; kubelet logs "failed to connect to container runtime"
 scenario_11() {
   backup_if_needed /var/lib/kubelet/config.yaml
   run_on_vm "sed -i 's|containerRuntimeEndpoint: unix:///run/containerd/containerd.sock|containerRuntimeEndpoint: unix:///run/containerd/wrong.sock|' /var/lib/kubelet/config.yaml && systemctl restart kubelet" 2>/dev/null || true
 }
 
-# containerd stopped and disabled (no container runtime)
+# Difficulty: Beginner | Concept: container runtime service state | Symptom: node drops to NotReady; all running containers stop
 scenario_12() {
   run_on_vm "systemctl stop containerd && systemctl disable containerd" 2>/dev/null || true
 }
 
-# Calico CNI config hidden (node goes NotReady)
+# Difficulty: Intermediate | Concept: CNI config file presence | Symptom: node NotReady; pods in ContainerCreating; kubelet logs "no CNI"
 scenario_13() {
   run_on_vm "if [ -f /etc/cni/net.d/10-calico.conflist ]; then mv /etc/cni/net.d/10-calico.conflist /etc/cni/net.d/10-calico.conflist.hidden; fi" 2>/dev/null || true
 }
 
-# Tigera operator scaled to zero (Calico stops being reconciled, eventually breaks)
+# Difficulty: Advanced | Concept: CNI operator lifecycle | Symptom: cluster looks healthy initially; calico-node pods are not recreated if deleted
 scenario_14() {
   run_on_vm "kubectl --kubeconfig=/etc/kubernetes/admin.conf scale deployment tigera-operator -n tigera-operator --replicas=0" 2>/dev/null || true
   # Then delete a calico-node pod so we can see the operator is missing
   run_on_vm "kubectl --kubeconfig=/etc/kubernetes/admin.conf delete pod -n calico-system -l k8s-app=calico-node --ignore-not-found" 2>/dev/null || true
 }
 
-# AlwaysDeny admission controller in apiserver
+# Difficulty: Advanced | Concept: admission controller list | Symptom: API server runs; GET works; all CREATE and UPDATE operations fail
 scenario_15() {
   backup_if_needed /etc/kubernetes/manifests/kube-apiserver.yaml
   run_on_vm "sed -i 's|--enable-admission-plugins=NodeRestriction|--enable-admission-plugins=NodeRestriction,AlwaysDeny|' /etc/kubernetes/manifests/kube-apiserver.yaml" 2>/dev/null || true

@@ -8,7 +8,7 @@
 
 ## What This Chapter Does
 
-The control plane is up but `kubectl get nodes` shows `node1` as `NotReady` because there is no CNI. kubelet does not mark a node Ready until pod networking can be set up, which requires a CNI plugin to be present and a config file in `/etc/cni/net.d/`. This document installs Calico via the Tigera operator with a custom `Installation` resource and verifies that `NetworkPolicy` is actually enforced.
+The control plane is up but `kubectl get nodes` shows `controlplane-1` as `NotReady` because there is no CNI. kubelet does not mark a node Ready until pod networking can be set up, which requires a CNI plugin to be present and a config file in `/etc/cni/net.d/`. This document installs Calico via the Tigera operator with a custom `Installation` resource and verifies that `NetworkPolicy` is actually enforced.
 
 `NetworkPolicy` enforcement is the reason Calico is preferred over Flannel for the CKA. Flannel will let you create a `NetworkPolicy` resource without complaint and then silently ignore it. Any exam question that asks you to use `NetworkPolicy` to deny traffic will mark you wrong if your CNI does not enforce it.
 
@@ -100,7 +100,7 @@ kubectl get pods -n calico-apiserver
 kubectl get nodes -o wide
 ```
 
-`node1` status should now be `Ready`. If it is still `NotReady` after a minute, check the kubelet logs:
+`controlplane-1` status should now be `Ready`. If it is still `NotReady` after a minute, check the kubelet logs:
 
 ```bash
 sudo journalctl -u kubelet -n 50 | grep -i 'cni\|network'
@@ -190,4 +190,8 @@ The cluster has working pod networking with `NetworkPolicy` enforcement:
 | `calico-kube-controllers` | `calico-system` | Watches Kubernetes resources and updates Calico state |
 | `calico-apiserver` | `calico-apiserver` | Aggregated API server for Calico-specific resources |
 
-`node1` is `Ready`, the control-plane taint is removed, and `NetworkPolicy` enforcement is verified. The next document installs the optional cluster services.
+`controlplane-1` is `Ready`, the control-plane taint is removed, and `NetworkPolicy` enforcement is verified. The next document installs the optional cluster services.
+
+---
+
+← [Previous: Initializing the Control Plane with kubeadm (Single Node)](02-control-plane-init.md) | [Next: Installing Cluster Services: Storage, Helm, and Metrics (Single Node) →](04-cluster-services.md)

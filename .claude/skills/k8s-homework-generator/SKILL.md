@@ -68,6 +68,37 @@ The generator produces four files in the same directory as the prompt.md:
 The `<topic>` slug must match the directory name (for example, `network-policies`
 produces `network-policies-tutorial.md`).
 
+## HOW TO EXECUTE THIS SKILL (IMPORTANT)
+
+**CRITICAL: This skill MUST be executed via the Agent tool, not by directly generating files.**
+
+When the user invokes this skill, you MUST:
+
+1. ✅ **DO THIS**: Spawn an agent with the Agent tool to generate all four files
+2. ❌ **DO NOT**: Manually write tutorial.md, homework.md, or answers.md yourself
+3. ❌ **DO NOT**: Start generating content inline in the conversation
+
+**Why use an agent:**
+- The base-template.md is 500+ lines with detailed quality gates
+- Each file is 5,000-15,000 words
+- Quality checks require comparing across all 4 files
+- Agents have the context window to do this properly
+
+**Correct execution pattern:**
+```
+User: "Generate troubleshooting assignment-3"
+You: <invoke Agent with description="Generate troubleshooting assignment-3" 
+           and prompt="Generate assignment using k8s-homework-generator skill...">
+```
+
+**Incorrect execution pattern:**
+```
+User: "Generate troubleshooting assignment-3"
+You: "Let me generate the tutorial..." <starts writing content inline>
+```
+
+If you catch yourself starting to write tutorial/homework content directly, STOP and spawn an agent instead.
+
 ## Generation Process
 
 1. Read the base template from `references/base-template.md` to load all structural

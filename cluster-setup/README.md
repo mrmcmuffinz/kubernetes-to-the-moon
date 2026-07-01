@@ -1,19 +1,47 @@
-# Kubernetes from Scratch: VM-Based Cluster Guides
+# Kubernetes from Scratch: VM and Pi Cluster Guides
 
-This directory contains four guides for building Kubernetes clusters on QEMU/KVM virtual machines, from two different installation methods (manual systemd configuration vs. kubeadm) and two different scales (single-node vs. two-node). The guides exist to teach how Kubernetes works under the hood. They are educational material for learners who want to understand what `kubeadm` automates, how CNI plugins program routes, how etcd clustering works, and how certificates flow through the system.
+This directory contains guides for building Kubernetes clusters on QEMU/KVM virtual
+machines and on physical Raspberry Pi 5 hardware. Two VM guides use manual systemd
+configuration to show how Kubernetes works under the hood; the rest use `kubeadm` to
+match the exam environment. A separate Pi track builds a three-node ARM64 kubeadm
+cluster on dedicated hardware for hands-on exam practice.
 
-These guides are optional and not required for CKA exam preparation. The main exercises in this repository (`exercises/`) are built around kind clusters, which start fast, clean up easily, and closely match the exam environment. The VM-based guides in this directory exist for the subset of learners who find that understanding the internals makes the exam topics click. They complement the main exercises rather than replace them.
+These guides are optional and not required for CKA exam preparation. The main exercises
+in this repository (`exercises/`) are built around kind clusters, which start fast, clean
+up easily, and closely match the exam environment. The VM and Pi guides exist for learners
+who find that understanding the internals makes the exam topics click, or who want a
+persistent cluster to practice on.
 
-## The Four Guides
+## VM Guides
+
+**Network prerequisite for multi-node VM guides:** All multi-node QEMU clusters (two-kubeadm,
+three-kubeadm, ha-kubeadm) use a VLAN-isolated host bridge rather than NAT. Complete
+[`vm/00-vlan-host-network-setup.md`](vm/00-vlan-host-network-setup.md) before starting
+any of those guides. Single-node and two-systemd guides are unaffected.
 
 | Guide | Install Method | Nodes | Time Estimate | Purpose |
 |-------|----------------|-------|---------------|---------|
 | [`vm/single-systemd`](vm/single-systemd/) | Manual binaries + systemd units | 1 | 2-3 hours | Understand what every component does and how they connect |
 | [`vm/single-kubeadm`](vm/single-kubeadm/) | kubeadm | 1 | 30-45 minutes | See what kubeadm automates, practice exam-style operations |
 | [`vm/two-systemd`](vm/two-systemd/) | Manual binaries + systemd units | 2 | 3-4 hours | Understand multi-node networking, manual route programming |
-| [`vm/two-kubeadm`](vm/two-kubeadm/) | kubeadm | 2 | 1 hour | Practice kubeadm join, multi-node exam scenarios |
+| [`vm/two-kubeadm`](vm/two-kubeadm/) | kubeadm | 2 (1 CP + 1 worker) | 1 hour | Practice kubeadm join, multi-node exam scenarios |
+| [`vm/three-kubeadm`](vm/three-kubeadm/) | kubeadm | 3 (1 CP + 2 workers) | 1.5 hours | Scheduling across multiple workers, drain and upgrade practice |
+| [`vm/ha-kubeadm`](vm/ha-kubeadm/) | kubeadm + HAProxy | 5 (2 CP + 3 workers) | 2-2.5 hours | HA control plane, second control plane join, VIP load balancing |
 
-All four guides target Kubernetes v1.35.3 (the CKA exam version) and use Ubuntu 24.04 LTS guest VMs.
+All VM guides target Kubernetes v1.35.3 (the CKA exam version) and use Ubuntu 24.04 LTS guest VMs.
+
+## Pi Cluster Guide
+
+The [`pi/`](pi/) track builds a three-node kubeadm cluster on Raspberry Pi 5 8GB hardware
+running Ubuntu Server 24.04 LTS (ARM64). It targets the same Kubernetes version (v1.35.3)
+and installs the same Calico CNI as the VM guides. Use this cluster as a persistent
+practice environment that stays up between sessions.
+
+| Guide | Nodes | Time Estimate | Purpose |
+|-------|-------|---------------|---------|
+| [`pi/`](pi/) | 3 (1 CP + 2 workers, ARM64) | ~90 minutes | Physical kubeadm cluster for persistent CKA exam practice |
+
+See [`pi/README.md`](pi/README.md) for the full guide list and component version table.
 
 ### Single-Systemd: The Deepest Dive
 
@@ -37,6 +65,14 @@ Nobody runs production clusters this way. The point is educational: seeing the s
 
 The [`vm/two-kubeadm`](vm/two-kubeadm/) guide builds a two-node cluster with `kubeadm`, installs Calico (so `NetworkPolicy` actually works), and is suitable for practicing every Day 1 through Day 14 scenario in the Mumshad CKA course: scheduling, taints and tolerations, node affinity, daemonsets, cordon and drain, control plane upgrades, kubeadm join token rotation, etcd backup and restore, and multi-node networking troubleshooting.
 
+### Three-Kubeadm: Scheduling Across Two Workers
+
+The [`vm/three-kubeadm`](vm/three-kubeadm/) guide extends the two-node setup to one control plane and two workers. The key reason to add a second worker is scheduling visibility: with two workers you can drain one and watch workloads migrate, see DaemonSet pods placed one-per-worker, and exercise pod affinity and anti-affinity rules that spread (or co-locate) pods across nodes. The setup is otherwise identical to the two-node guide and reuses the same bridge, containerd configuration, and kubeadm workflow.
+
+### HA-Kubeadm: High Availability Control Plane
+
+The [`vm/ha-kubeadm`](vm/ha-kubeadm/) guide builds a five-node cluster with two control plane nodes and three workers. A HAProxy instance on the host bridge serves as the control plane VIP (`192.168.100.100:6443`), and `kubeadm init --upload-certs` + `kubeadm join --control-plane` handle the stacked-etcd HA join. This is the guide to use if you want to practice the `kubeadm join --control-plane` workflow, understand how `controlPlaneEndpoint` works, see how etcd quorum changes when a control plane node goes down, and test HAProxy health-check-driven failover.
+
 ## Is This For You?
 
 ### Use kind clusters (per docs/cluster-setup.md) if:
@@ -56,14 +92,23 @@ The two approaches are complementary. Many learners work through the main exerci
 
 ## Platform Requirements
 
-All four guides assume:
+All guides assume:
 - **Host OS:** Ubuntu 24.04 LTS
 - **CPU:** x86_64 with hardware virtualization enabled (Intel VT-x or AMD-V)
-- **RAM:** At least 8 GB for single-node guides, 16 GB for two-node guides (4 GB allocated per VM plus host overhead)
-- **Disk:** 50 GB free for single-node, 100 GB for two-node
+- **RAM:** 8 GB for single-node, 16 GB for two-node, 24 GB for three-node, 40 GB for five-node HA (4 GB per VM plus host overhead)
+- **Disk:** 50 GB free for single-node, 100-250 GB for multi-node (40 GB per VM)
 - **Tooling:** QEMU/KVM, cloud-init, basic shell proficiency
 
 These are more restrictive than kind. If you are on macOS, Windows, or a Linux host without KVM, stick with kind.
+
+### Optional: Reducing Repeated Downloads
+
+If you rebuild VMs frequently to practice the init workflow, you will re-download the
+same packages, binary archives, and container images on every run. Three optional guides address this:
+
+- [`vm/apt-cache-proxy.md`](vm/apt-cache-proxy.md) sets up nginx as an APT caching proxy on the host so that Ubuntu and Kubernetes packages are served from a local cache after the first download (sub-second `apt-get update` on cache hits).
+- [`vm/binary-cache.md`](vm/binary-cache.md) uses a QEMU 9p virtfs share to give the VM persistent access to a host directory where the install scripts save their binary archives, so `wget --timestamping` skips all downloads on subsequent rebuilds. Applies to systemd-based guides only.
+- [`vm/registry-cache.md`](vm/registry-cache.md) runs pull-through registry caches on the host via nerdctl so that container images (pause, kube-apiserver, etcd, coredns, calico, etc.) are served from local cache after the first pull. Applies to all guides.
 
 ## Recommended Sequence
 
@@ -77,10 +122,15 @@ These are more restrictive than kind. If you are on macOS, Windows, or a Linux h
 3. `vm/two-systemd` (3-4 hours): Extend the systemd approach to two nodes, program routes manually
 4. `vm/two-kubeadm` (1 hour): See the kubeadm equivalent for multi-node
 
-Most learners do not work through all four. Common patterns:
+**Want to practice exam scheduling scenarios?** Do `two-kubeadm` first, then `three-kubeadm` for a richer scheduling surface (two workers to spread pods across, drain-and-migrate practice).
+
+**Want to understand HA control planes?** Work through `two-kubeadm` first, then `ha-kubeadm` for the HA join workflow, HAProxy VIP, and etcd quorum behavior.
+
+Most learners do not work through all six. Common patterns:
 - Just `single-systemd` for the deepest dive on control plane components
 - Just `single-kubeadm` + `two-kubeadm` for exam-focused practice
-- `single-systemd` followed by `single-kubeadm` to see the before-and-after of what kubeadm automates
+- `two-kubeadm` + `three-kubeadm` for richer multi-node scheduling practice
+- `two-kubeadm` + `ha-kubeadm` for HA control plane understanding
 
 ## What These Guides Offer That kind Doesn't
 
@@ -106,9 +156,23 @@ Most learners do not work through all four. Common patterns:
 
 The 45 assignments in `exercises/` are the core of this repository. They are built to develop exam fluency through repetition on a kind cluster. Each assignment has a tutorial, 15 progressive exercises, and a complete answer key. The content is designed to be worked through in sequence, following the `LEARNING_PATH.md` curriculum.
 
-The VM guides in this directory are supplementary. They exist for learners who want to go deeper on specific topics after completing the relevant main exercises. For example:
-- After `exercises/18-tls-and-certificates/`, the `vm/single-systemd/02-bootstrapping-security.md` document shows exactly how to generate every certificate in the cluster by hand
-- After `exercises/17-cluster-lifecycle/`, the `vm/single-kubeadm/02-control-plane-init.md` document shows what `kubeadm init` actually does under the hood
+The VM guides in this directory are supplementary. They exist for learners who want to go deeper on specific topics after completing the relevant main exercises. The table below maps each guide to the exercises that share its subject matter.
+
+| Guide | Pairs well with | Connection |
+|-------|----------------|------------|
+| `vm/single-systemd` | `exercises/18-tls-and-certificates/` | `02-bootstrapping-security.md` shows every cert generated by hand using cfssl, which makes certificate renewal in the exam exercises concrete |
+| `vm/single-systemd` | `exercises/17-cluster-lifecycle/` | `03-control-plane.md` shows the systemd units behind every component kubeadm manages; useful context before doing kubeadm upgrades |
+| `vm/single-systemd` | `exercises/09-coredns/` | `06-cluster-services.md` installs CoreDNS via Helm with a hand-set ClusterIP, exposing the clusterDNS/clusterIP coupling that CoreDNS debugging exercises rely on |
+| `vm/single-kubeadm` | `exercises/17-cluster-lifecycle/` | `02-control-plane-init.md` is the kubeadm init walkthrough with a file mapping table -- read it before working through upgrade and join exercises |
+| `vm/single-kubeadm` | `exercises/14-pod-security/` | The single-kubeadm cluster uses Calico and has `PodSecurity` admission available; use it to test Pod Security Standards without relying on kind |
+| `vm/two-systemd` | `exercises/10-network-policies/` | `06-manual-pod-routing.md` explains exactly what a CNI plugin does under the hood, which is the right mental model for debugging NetworkPolicy |
+| `vm/two-systemd` | `exercises/09-coredns/` | The two-node CoreDNS install (two replicas, per-node) is the reference for what the exercises' CoreDNS debugging scenarios are based on |
+| `vm/two-kubeadm` | `exercises/17-cluster-lifecycle/` | `06-worker-join.md` and the runbook cover kubeadm join, token rotation, and the two-node upgrade workflow end to end |
+| `vm/two-kubeadm` | `exercises/10-network-policies/` | Calico on bridge networking enforces NetworkPolicy; use the two-kubeadm cluster to test cross-node NetworkPolicy exercises |
+| `vm/three-kubeadm` | `exercises/17-cluster-lifecycle/` | Two-worker drain exercises are realistic here -- drain one worker and watch pods migrate to the other |
+| `vm/three-kubeadm` | `exercises/08-services/` | Three-node cluster gives you better service load-balancing visibility with kube-proxy distributing traffic across two real worker nodes |
+| `vm/ha-kubeadm` | `exercises/17-cluster-lifecycle/` | `07-second-control-plane-join.md` covers the `kubeadm join --control-plane` path and etcd quorum behavior that the lifecycle exercises reference |
+| `vm/ha-kubeadm` | `exercises/18-tls-and-certificates/` | The multi-SAN certificate requirement (VIP + both control plane IPs) in `05-control-plane-init.md` directly reinforces the cert SAN exercises |
 
 The VM guides are not prerequisites for the main exercises. Start with the main exercises, come back to the VM guides when a topic feels opaque and you want to see the internals.
 

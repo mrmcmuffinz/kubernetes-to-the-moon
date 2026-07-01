@@ -6,6 +6,8 @@ Complete solutions. Level 3 and Level 5 debugging answers use the three-stage st
 
 ## Exercise 1.1 Solution
 
+command: `k create ingress hello-ingress -n ex-1-1 $do --rule="hello.example.test/*=hello:80" --class=traefik`
+
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -130,20 +132,32 @@ Three rules (three `host` entries), the third with two paths. The `host` field s
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: with-fallback
+  name: app-route
   namespace: ex-2-3
+  annotations:
+    traefik.ingress.kubernetes.io/router.priority: "10"
 spec:
   ingressClassName: traefik
-  defaultBackend:
-    service: {name: default, port: {number: 80}}
   rules:
   - host: app.example.test
     http:
       paths:
       - {path: /, pathType: Prefix, backend: {service: {name: app, port: {number: 80}}}}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: with-fallback
+  namespace: ex-2-3
+  annotations:
+    traefik.ingress.kubernetes.io/router.priority: "1"
+spec:
+  ingressClassName: traefik
+  defaultBackend:
+    service: {name: default, port: {number: 80}}
 ```
 
-A rule plus a defaultBackend. The rule wins for requests on its host; any other host falls to defaultBackend.
+Two Ingresses in the same namespace. `app-route` handles `app.example.test` with explicit priority 10. `with-fallback` has no rules, only a `defaultBackend`, with priority 1. Traefik's Kubernetes Ingress provider treats a no-rules Ingress as a cluster-wide catch-all router; the lower priority ensures it never wins over any Ingress that has an explicit rule. Requests to unknown hosts fall to `with-fallback`. Note: Traefik v3 does not support `defaultBackend` combined with `rules` in a single Ingress -- the split-Ingress pattern with explicit priority is the Traefik-idiomatic equivalent.
 
 ---
 
@@ -223,19 +237,33 @@ kubectl patch ingress -n ex-3-3 path-bad --type='json' \
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: four-one
+  name: four-one-routes
   namespace: ex-4-1
+  annotations:
+    traefik.ingress.kubernetes.io/router.priority: "10"
 spec:
   ingressClassName: traefik
-  defaultBackend:
-    service: {name: svc-default, port: {number: 80}}
   rules:
   - host: app.example.test
     http:
       paths:
       - {path: /x, pathType: Prefix, backend: {service: {name: svc-x, port: {number: 80}}}}
       - {path: /y, pathType: Prefix, backend: {service: {name: svc-y, port: {number: 80}}}}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: four-one-fallback
+  namespace: ex-4-1
+  annotations:
+    traefik.ingress.kubernetes.io/router.priority: "1"
+spec:
+  ingressClassName: traefik
+  defaultBackend:
+    service: {name: svc-default, port: {number: 80}}
 ```
+
+`four-one-routes` handles the two specific paths on `app.example.test` at high priority. `four-one-fallback` has no rules, making it a cluster-wide catch-all at priority 1 -- it handles any path on any host that no other router claims, including `/z` on `app.example.test`.
 
 ---
 
@@ -305,14 +333,12 @@ metadata:
   namespace: ex-5-1
 spec:
   ingressClassName: traefik
-  defaultBackend:
-    service: {name: marketing, port: {number: 80}}
   rules:
   - host: www.webapp.example.test
     http:
       paths:
-      - {path: /, pathType: Prefix, backend: {service: {name: marketing, port: {number: 80}}}}
       - {path: /static, pathType: Prefix, backend: {service: {name: static, port: {number: 80}}}}
+      - {path: /, pathType: Prefix, backend: {service: {name: marketing, port: {number: 80}}}}
   - host: api.webapp.example.test
     http:
       paths:
@@ -327,7 +353,7 @@ spec:
       - {path: /healthz, pathType: Exact, backend: {service: {name: health, port: {number: 80}}}}
 ```
 
-Note: on the `www.webapp.example.test` host, `/static` is listed before `/` so its more-specific Prefix wins for paths starting with `/static`. Traefik (and Ingress controllers generally) sort paths by specificity; still, listing the more-specific path first is good practice for clarity. `defaultBackend` on `marketing` means any request on a host not explicitly routed lands on the marketing site.
+On `www.webapp.example.test`, `/static` is listed before `/` so the more-specific Prefix wins for paths starting with `/static`. Traefik sorts paths by specificity; listing the more-specific path first is good practice for clarity.
 
 ---
 

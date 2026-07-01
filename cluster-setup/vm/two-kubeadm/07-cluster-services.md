@@ -20,7 +20,7 @@ CoreDNS is already running in `kube-system` because `kubeadm init` deployed it. 
 
 ## Prerequisites
 
-Both nodes are `Ready`. `kubectl` is configured (either on `node1` or via the kubeconfig copied to the host).
+Both nodes are `Ready`. `kubectl` is configured (either on `controlplane-1` or via the kubeconfig copied to the host).
 
 ---
 
@@ -125,7 +125,7 @@ helm uninstall hello
 ### Step 1: Install
 
 ```bash
-kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.8.1/components.yaml
 ```
 
 ### Step 2: Add the Insecure-TLS Flag for Lab Use
@@ -157,6 +157,15 @@ If `kubectl top nodes` returns "metrics not available", give it another 30 secon
 
 ## Part 4: MetalLB (Optional)
 
+
+
+Choose a range that:
+- Is on the same subnet as your bridge and VMs
+- Does not conflict with your VMs (e.g., .210, .211), gateway, or bridge IP
+- Has enough addresses for your testing needs (20 IPs is typically sufficient)
+
+---
+
 Without a cloud provider, `Service type=LoadBalancer` stays in `<pending>` forever because there is nothing to assign external IPs. MetalLB fills that role on bare metal and makes Ingress controller install scenarios work end to end. Skip this if you only care about ClusterIP and NodePort.
 
 ### Step 1: Install
@@ -180,7 +189,7 @@ metadata:
   namespace: metallb-system
 spec:
   addresses:
-    - 192.168.122.200-192.168.122.220
+    - 192.168.100.200-192.168.100.220
 ---
 apiVersion: metallb.io/v1beta1
 kind: L2Advertisement
@@ -202,7 +211,7 @@ kubectl expose deployment lb-test --port=80 --type=LoadBalancer
 # Wait for MetalLB to assign an IP
 sleep 5
 kubectl get svc lb-test
-# EXTERNAL-IP should be in 192.168.122.200-220
+# EXTERNAL-IP should be in 192.168.100.200-220
 
 # Reach it from the host
 LB_IP=$(kubectl get svc lb-test -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
@@ -240,7 +249,7 @@ kubectl get --raw /healthz && echo
 
 | Namespace | Pods |
 |-----------|------|
-| `kube-system` | apiserver, controller-manager, scheduler, etcd (all static, on `node1`), kube-proxy (one per node), coredns (2 replicas) |
+| `kube-system` | apiserver, controller-manager, scheduler, etcd (all static, on `controlplane-1`), kube-proxy (one per node), coredns (2 replicas) |
 | `calico-system` | calico-typha, calico-node (one per node), calico-kube-controllers |
 | `calico-apiserver` | calico-apiserver |
 | `tigera-operator` | tigera-operator |
@@ -268,7 +277,7 @@ The two-node cluster is now complete:
 |-------|-----------|--------|
 | VM infrastructure | QEMU/KVM, Ubuntu 24.04, host bridge | Running |
 | Container runtime | containerd, runc | Running on both nodes |
-| Control plane | etcd, kube-apiserver, kube-controller-manager, kube-scheduler | Running on `node1` (static pods) |
+| Control plane | etcd, kube-apiserver, kube-controller-manager, kube-scheduler | Running on `controlplane-1` (static pods) |
 | Worker | kubelet, kube-proxy | Running on both nodes |
 | Cluster networking | Calico (VXLANCrossSubnet), CoreDNS | Running |
 | Storage | local-path-provisioner | Running, default StorageClass |
@@ -277,3 +286,7 @@ The two-node cluster is now complete:
 | Load balancing | MetalLB (optional) | Running, address pool configured |
 
 The cluster is ready for every Day 1 through Day 14 scenario in the Mumshad CKA course.
+
+---
+
+← [Previous: Joining the Worker Node](06-worker-join.md)

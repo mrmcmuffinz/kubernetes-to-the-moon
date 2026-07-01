@@ -24,7 +24,7 @@ The original guide installs three additional services. Two of them do not apply 
 
 ## Prerequisites
 
-SSH into the VM. All control plane and worker components should be running. You should be able to run `kubectl get nodes` and see `node1` in `Ready` status.
+SSH into the VM. All control plane and worker components should be running. You should be able to run `kubectl get nodes` and see `controlplane-1` in `Ready` status.
 
 ## Installing Helm
 

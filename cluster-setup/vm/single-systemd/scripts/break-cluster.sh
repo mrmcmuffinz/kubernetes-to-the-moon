@@ -196,76 +196,95 @@ list_scenarios() {
 
 # -------------------------------------------------------------------
 # Scenarios
+# Each scenario has a header comment: Difficulty | Concept | Symptom
+# Difficulty: Beginner = single service, obvious logs
+#             Intermediate = requires cross-component reasoning
+#             Advanced = subtle misconfiguration, non-obvious symptom
 # -------------------------------------------------------------------
 
+# Difficulty: Beginner | Concept: etcd data directory path | Symptom: etcd fails to start; API server loses connection to etcd
 scenario_1() {
   backup_if_needed /etc/systemd/system/etcd.service
   run_on_vm "sed -i 's|--data-dir=/var/lib/etcd|--data-dir=/var/lib/etcd-bad|' /etc/systemd/system/etcd.service && systemctl daemon-reload && systemctl restart etcd" 2>/dev/null || true
 }
 
+# Difficulty: Beginner | Concept: etcd endpoint URL in kube-apiserver | Symptom: API server starts then crashes; cannot reach etcd on wrong port
 scenario_2() {
   backup_if_needed /etc/systemd/system/kube-apiserver.service
   run_on_vm "sed -i 's|--etcd-servers=https://127.0.0.1:2379|--etcd-servers=https://127.0.0.1:9999|' /etc/systemd/system/kube-apiserver.service && systemctl daemon-reload && systemctl restart kube-apiserver" 2>/dev/null || true
 }
 
+# Difficulty: Beginner | Concept: TLS certificate file path | Symptom: API server crashes immediately; logs show "no such file or directory"
 scenario_3() {
   backup_if_needed /etc/systemd/system/kube-apiserver.service
   run_on_vm "sed -i 's|--tls-cert-file=/var/lib/kubernetes/kubernetes.pem|--tls-cert-file=/var/lib/kubernetes/missing.pem|' /etc/systemd/system/kube-apiserver.service && systemctl daemon-reload && systemctl restart kube-apiserver" 2>/dev/null || true
 }
 
+# Difficulty: Intermediate | Concept: controller-manager kubeconfig path | Symptom: API server runs; kubectl works; but deployments stop reconciling and failed pods are not replaced
 scenario_4() {
   backup_if_needed /etc/systemd/system/kube-controller-manager.service
   run_on_vm "sed -i 's|--kubeconfig=/var/lib/kubernetes/kube-controller-manager.kubeconfig|--kubeconfig=/var/lib/kubernetes/wrong.kubeconfig|' /etc/systemd/system/kube-controller-manager.service && systemctl daemon-reload && systemctl restart kube-controller-manager" 2>/dev/null || true
 }
 
+# Difficulty: Intermediate | Concept: scheduler config file path | Symptom: existing pods keep running; new pods stay Pending indefinitely
 scenario_5() {
   backup_if_needed /etc/systemd/system/kube-scheduler.service
   run_on_vm "sed -i 's|--config=/etc/kubernetes/config/kube-scheduler.yaml|--config=/etc/kubernetes/config/missing-scheduler.yaml|' /etc/systemd/system/kube-scheduler.service && systemctl daemon-reload && systemctl restart kube-scheduler" 2>/dev/null || true
 }
 
+# Difficulty: Beginner | Concept: systemd service enabled/disabled state | Symptom: kubectl completely unresponsive; kube-apiserver.service is disabled
 scenario_6() {
   run_on_vm "systemctl stop kube-apiserver && systemctl disable kube-apiserver" 2>/dev/null || true
 }
 
+# Difficulty: Advanced | Concept: etcd TLS certificate chain | Symptom: etcd restarts fine but fails TLS handshake; API server logs show x509 errors
 scenario_7() {
   backup_if_needed /etc/etcd/ca.pem
   run_on_vm "mv /etc/etcd/ca.pem /etc/etcd/ca.pem.hidden && systemctl restart etcd" 2>/dev/null || true
 }
 
+# Difficulty: Advanced | Concept: service CIDR consistency across components | Symptom: API server runs; kubectl works; but CoreDNS gets a wrong ClusterIP and new services break
 scenario_8() {
   backup_if_needed /etc/systemd/system/kube-apiserver.service
   run_on_vm "sed -i 's|--service-cluster-ip-range=10.96.0.0/16|--service-cluster-ip-range=10.99.0.0/16|' /etc/systemd/system/kube-apiserver.service && systemctl daemon-reload && systemctl restart kube-apiserver" 2>/dev/null || true
 }
 
+# Difficulty: Intermediate | Concept: etcd client URL scheme (http vs https) | Symptom: etcd starts; API server fails with TLS handshake error connecting to etcd
 scenario_9() {
   backup_if_needed /etc/systemd/system/etcd.service
   run_on_vm "sed -i 's|--listen-client-urls https://|--listen-client-urls http://|g' /etc/systemd/system/etcd.service && systemctl daemon-reload && systemctl restart etcd" 2>/dev/null || true
 }
 
+# Difficulty: Intermediate | Concept: API server authorization mode | Symptom: API server starts; kubectl connects; every request returns 403 Forbidden
 scenario_10() {
   backup_if_needed /etc/systemd/system/kube-apiserver.service
   run_on_vm "sed -i 's|--authorization-mode=Node,RBAC|--authorization-mode=AlwaysDeny|' /etc/systemd/system/kube-apiserver.service && systemctl daemon-reload && systemctl restart kube-apiserver" 2>/dev/null || true
 }
 
+# Difficulty: Intermediate | Concept: kubelet CRI socket path | Symptom: node shows NotReady; kubelet logs show "failed to connect to container runtime"
 scenario_11() {
   backup_if_needed /var/lib/kubelet/kubelet-config.yaml
   run_on_vm "sed -i 's|containerRuntimeEndpoint: \"unix:///var/run/containerd/containerd.sock\"|containerRuntimeEndpoint: \"unix:///var/run/containerd/wrong.sock\"|' /var/lib/kubelet/kubelet-config.yaml && systemctl restart kubelet" 2>/dev/null || true
 }
 
+# Difficulty: Beginner | Concept: container runtime dependency chain | Symptom: node NotReady; all running containers stop; containerd.service is disabled
 scenario_12() {
   run_on_vm "systemctl stop containerd && systemctl disable containerd" 2>/dev/null || true
 }
 
+# Difficulty: Intermediate | Concept: CNI configuration file presence | Symptom: node NotReady; kubelet logs show "network plugin not ready"; existing pods stop getting IPs
 scenario_13() {
   backup_if_needed /etc/cni/net.d/10-bridge.conf
   run_on_vm "mv /etc/cni/net.d/10-bridge.conf /etc/cni/net.d/10-bridge.conf.hidden && systemctl restart kubelet" 2>/dev/null || true
 }
 
+# Difficulty: Intermediate | Concept: kubelet kubeconfig server URL | Symptom: node NotReady; kubelet logs show "connection refused" to wrong port; API server is healthy
 scenario_14() {
   backup_if_needed /var/lib/kubelet/kubeconfig
   run_on_vm "sed -i 's|server: https://127.0.0.1:6443|server: https://127.0.0.1:7777|' /var/lib/kubelet/kubeconfig && systemctl restart kubelet" 2>/dev/null || true
 }
 
+# Difficulty: Advanced | Concept: admission controller list | Symptom: API server runs; GET requests work; all CREATE and UPDATE operations fail with admission error
 scenario_15() {
   backup_if_needed /etc/systemd/system/kube-apiserver.service
   run_on_vm "sed -i 's|--enable-admission-plugins=|--enable-admission-plugins=AlwaysDeny,|' /etc/systemd/system/kube-apiserver.service && systemctl daemon-reload && systemctl restart kube-apiserver" 2>/dev/null || true

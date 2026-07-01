@@ -10,42 +10,19 @@ This tutorial covers the NetworkPolicy resource structure, how pod selectors wor
 
 ## Prerequisites
 
-You need a kind cluster with Calico CNI. The default kind CNI (kindnet) does NOT enforce Network Policies.
+You need a multi-node cluster with a CNI that enforces NetworkPolicy. Calico v3.31.5 or later is the tested option.
 
-Create a cluster with the default CNI disabled:
-
-```bash
-cat <<EOF | KIND_EXPERIMENTAL_PROVIDER=nerdctl kind create cluster --config=-
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-networking:
-  disableDefaultCNI: true
-nodes:
-- role: control-plane
-- role: worker
-- role: worker
-EOF
-```
-
-Install Calico:
+**Existing kubeadm or bare-metal cluster with Calico:** Verify that Calico is running and skip the kind setup below.
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.5/manifests/calico.yaml
-```
+kubectl get pods -l k8s-app=calico-node -A
+# Expected: one calico-node pod per node, all Running
 
-Wait for Calico pods to be ready:
-
-```bash
-kubectl wait --for=condition=Ready pods -l k8s-app=calico-node -n kube-system --timeout=120s
-kubectl wait --for=condition=Ready pods -l k8s-app=calico-kube-controllers -n kube-system --timeout=120s
-```
-
-Verify the cluster is ready:
-
-```bash
 kubectl get nodes
-kubectl get pods -n kube-system
+# Expected: all nodes Ready
 ```
+
+**kind cluster:** Follow `docs/cluster-setup.md#multi-node-with-calico-networkpolicy-support` to create a multi-node kind cluster with the default CNI disabled and Calico installed. The default kind CNI (kindnet) does NOT enforce NetworkPolicy.
 
 ## Setup
 
@@ -276,7 +253,7 @@ Test the effect:
 
 ```bash
 # From web pod to api (should work)
-kubectl exec -n tutorial-network-policies web -- wget -qO- --timeout=2 http://$API_IP
+kubectl exec -n tutorial-network-policies web -- curl -sf --connect-timeout 2 http://$API_IP
 
 # From client pod to api (should fail)
 kubectl exec -n tutorial-network-policies client -- wget -qO- --timeout=2 http://$API_IP
@@ -570,16 +547,16 @@ Test the policies:
 
 ```bash
 # Web can reach API (frontend to backend)
-kubectl exec -n tutorial-network-policies web -- wget -qO- --timeout=2 http://$API_IP && echo "web -> api: ALLOWED"
+kubectl exec -n tutorial-network-policies web -- curl -sf --connect-timeout 2 http://$API_IP && echo "web -> api: ALLOWED"
 
 # API can reach DB (backend to database)
-kubectl exec -n tutorial-network-policies api -- wget -qO- --timeout=2 http://$DB_IP && echo "api -> db: ALLOWED"
+kubectl exec -n tutorial-network-policies api -- curl -sf --connect-timeout 2 http://$DB_IP && echo "api -> db: ALLOWED"
 
 # Client cannot reach API (no tier label)
 timeout 3 kubectl exec -n tutorial-network-policies client -- wget -qO- --timeout=2 http://$API_IP || echo "client -> api: BLOCKED"
 
 # Web cannot reach DB directly (frontend cannot bypass backend)
-timeout 3 kubectl exec -n tutorial-network-policies web -- wget -qO- --timeout=2 http://$DB_IP || echo "web -> db: BLOCKED"
+timeout 3 kubectl exec -n tutorial-network-policies web -- curl -sf --connect-timeout 2 http://$DB_IP || echo "web -> db: BLOCKED"
 ```
 
 ## Verification

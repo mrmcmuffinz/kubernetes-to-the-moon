@@ -1,32 +1,32 @@
-# Installing the Control Plane on node1 (Two Nodes)
+# Installing the Control Plane on controlplane-1 (Two Nodes)
 
 **Based on:** [03-control-plane.md](../../single-systemd/03-control-plane.md) of the single-node guide.
 
-**Adapted for:** A two-node cluster. The control plane runs only on `node1`. The apiserver advertises itself on the bridge IP `192.168.122.10` so `node2`'s kubelet can reach it.
+**Adapted for:** A two-node cluster. The control plane runs only on `controlplane-1`. The apiserver advertises itself on the bridge IP `192.168.122.10` so `nodes-1`'s kubelet can reach it.
 
 ---
 
 ## What This Chapter Does
 
-Installs etcd, kube-apiserver, kube-controller-manager, and kube-scheduler as systemd services on `node1`. The components and configuration are nearly identical to the single-node guide, with three notable differences. First, the apiserver listens on `0.0.0.0` and advertises `192.168.122.10` so `node2` can reach it. Second, etcd's listen-client-urls include both `127.0.0.1` and `192.168.122.10`. Third, controller-manager binds on `0.0.0.0` for the same reason (so health checks and metrics work from anywhere on the cluster).
+Installs etcd, kube-apiserver, kube-controller-manager, and kube-scheduler as systemd services on `controlplane-1`. The components and configuration are nearly identical to the single-node guide, with three notable differences. First, the apiserver listens on `0.0.0.0` and advertises `192.168.122.10` so `nodes-1` can reach it. Second, etcd's listen-client-urls include both `127.0.0.1` and `192.168.122.10`. Third, controller-manager binds on `0.0.0.0` for the same reason (so health checks and metrics work from anywhere on the cluster).
 
-The control plane does not run on `node2`. Only kubelet and kube-proxy run there, set up in document 05.
+The control plane does not run on `nodes-1`. Only kubelet and kube-proxy run there, set up in document 05.
 
 ## What Is Different from the Single-Node Guide
 
 - apiserver `--advertise-address=192.168.122.10` instead of `10.0.2.15`
 - apiserver `--bind-address=0.0.0.0` (same as single-node, but now meaningful since something other than localhost is reaching it)
 - etcd `--listen-client-urls` includes `192.168.122.10:2379` instead of `10.0.2.15:2379`
-- controller-manager `--bind-address=0.0.0.0` so its `:10257/healthz` is reachable from `node2` for debugging
+- controller-manager `--bind-address=0.0.0.0` so its `:10257/healthz` is reachable from `nodes-1` for debugging
 
 Everything else is the same shape: same paths, same flags, same systemd unit structure.
 
 ## Prerequisites
 
-Document 03 complete. SSH into `node1`:
+Document 03 complete. SSH into `controlplane-1`:
 
 ```bash
-ssh node1
+ssh controlplane-1
 cd ~/auth
 ```
 
@@ -36,7 +36,7 @@ The certs and kubeconfigs from document 03 should be in `~/auth/`.
 
 ## Part 1: Install Binaries
 
-Same as single-systemd document 03. Run on `node1`:
+Same as single-systemd document 03. Run on `controlplane-1`:
 
 ```bash
 arch=amd64
@@ -95,7 +95,7 @@ After=network.target
 [Service]
 Type=notify
 ExecStart=/usr/local/bin/etcd \
-  --name=node1 \
+  --name=controlplane-1 \
   --cert-file=/etc/etcd/kubernetes.pem \
   --key-file=/etc/etcd/kubernetes-key.pem \
   --peer-cert-file=/etc/etcd/kubernetes.pem \
@@ -109,7 +109,7 @@ ExecStart=/usr/local/bin/etcd \
   --listen-client-urls=https://192.168.122.10:2379,https://127.0.0.1:2379 \
   --advertise-client-urls=https://192.168.122.10:2379 \
   --initial-cluster-token=etcd-cluster-0 \
-  --initial-cluster=node1=https://192.168.122.10:2380 \
+  --initial-cluster=controlplane-1=https://192.168.122.10:2380 \
   --initial-cluster-state=new \
   --data-dir=/var/lib/etcd
 Restart=on-failure
@@ -259,7 +259,7 @@ EOF
 
 Two important flags here that did not appear (or were less important) in the single-node guide:
 
-- `--allocate-node-cidrs=true` tells controller-manager to assign each node a slice of the cluster CIDR. With one node this was just `10.244.0.0/24`. With two nodes the controller will assign `node1` and `node2` distinct /24 slices.
+- `--allocate-node-cidrs=true` tells controller-manager to assign each node a slice of the cluster CIDR. With one node this was just `10.244.0.0/24`. With two nodes the controller will assign `controlplane-1` and `nodes-1` distinct /24 slices.
 - `--node-cidr-mask-size=24` sets the slice size. With `cluster-cidr=10.244.0.0/16` and `mask-size=24`, you get up to 256 nodes' worth of slices, more than enough for this lab.
 
 ### Step 3: Start
@@ -345,20 +345,20 @@ kubectl get namespaces
 
 ---
 
-## Part 7: Verify Reachability from node2
+## Part 7: Verify Reachability from nodes-1
 
-The whole point of binding the control plane on the bridge IP is that `node2` can reach it. Confirm:
+The whole point of binding the control plane on the bridge IP is that `nodes-1` can reach it. Confirm:
 
 ```bash
-ssh node2 'curl --cacert /tmp/ca.pem https://192.168.122.10:6443/healthz' 2>/dev/null || \
-  ssh node2 'curl -k https://192.168.122.10:6443/healthz'
+ssh nodes-1 'curl --cacert /tmp/ca.pem https://192.168.122.10:6443/healthz' 2>/dev/null || \
+  ssh nodes-1 'curl -k https://192.168.122.10:6443/healthz'
 # Expected: ok
 ```
 
 If this fails:
 
 ```bash
-# From node1
+# From controlplane-1
 sudo ss -tlnp | grep 6443
 # apiserver should be listening on 0.0.0.0:6443 (or *:6443)
 
@@ -371,7 +371,7 @@ sudo iptables -L FORWARD -n | grep 192.168.122
 
 ## Summary
 
-The control plane is up on `node1` and reachable from both `node1` and `node2`:
+The control plane is up on `controlplane-1` and reachable from both `controlplane-1` and `nodes-1`:
 
 | Service | Status | Listening On | Health |
 |---------|--------|-------------|--------|

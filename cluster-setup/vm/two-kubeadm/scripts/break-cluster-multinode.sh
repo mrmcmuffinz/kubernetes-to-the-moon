@@ -4,7 +4,7 @@
 #
 # Introduces a single fault into the two-node Kubernetes cluster for
 # troubleshooting practice. Run from the QEMU host. The script SSHes into
-# either node1 or node2 to apply the break.
+# either controlplane-1 or nodes-1 to apply the break.
 #
 # This is the multi-node companion to break-cluster.sh. The single-node script
 # focuses on manual systemd-unit and binary misconfigurations. This script
@@ -20,7 +20,7 @@
 #
 # Configuration:
 #   Set NODE1_SSH and NODE2_SSH to override the default SSH commands.
-#   Defaults assume "ssh node1" and "ssh node2" work via ~/.ssh/config.
+#   Defaults assume "ssh controlplane-1" and "ssh nodes-1" work via ~/.ssh/config.
 #
 # After running, SSH into either node and use kubectl, systemctl, journalctl,
 # and your knowledge of the cluster to diagnose and fix the problem.
@@ -32,18 +32,18 @@ TOTAL_SCENARIOS=15
 # -------------------------------------------------------------------
 # SSH configuration
 # -------------------------------------------------------------------
-NODE1_SSH="${NODE1_SSH:-ssh node1}"
-NODE2_SSH="${NODE2_SSH:-ssh node2}"
+NODE1_SSH="${NODE1_SSH:-ssh controlplane-1}"
+NODE2_SSH="${NODE2_SSH:-ssh nodes-1}"
 
 run_on() {
   local node="$1"
   shift
   case "$node" in
-    node1) $NODE1_SSH sudo bash <<EOF
+    controlplane-1) $NODE1_SSH sudo bash <<EOF
 $*
 EOF
     ;;
-    node2) $NODE2_SSH sudo bash <<EOF
+    nodes-1) $NODE2_SSH sudo bash <<EOF
 $*
 EOF
     ;;
@@ -71,7 +71,7 @@ SYNOPSIS
 DESCRIPTION
     Introduces a single controlled fault into your two-node, kubeadm-installed
     Kubernetes cluster for troubleshooting practice. Run this from the QEMU host.
-    The script SSHes into either node1 or node2 to apply the break.
+    The script SSHes into either controlplane-1 or nodes-1 to apply the break.
 
     This variant covers kubeadm cluster operations across two nodes: join token
     issues, kubelet config drift, CNI failures, kube-proxy issues, certificate
@@ -93,14 +93,14 @@ OPTIONS
 
 CONFIGURATION
     NODE1_SSH
-        SSH command for node1. Default: ssh node1
+        SSH command for controlplane-1. Default: ssh controlplane-1
 
     NODE2_SSH
-        SSH command for node2. Default: ssh node2
+        SSH command for nodes-1. Default: ssh nodes-1
 
     Examples:
-        export NODE1_SSH="ssh -p 2222 kube@192.168.122.10"
-        export NODE2_SSH="ssh -p 2223 kube@192.168.122.11"
+        export NODE1_SSH="ssh kube@192.168.100.10"
+        export NODE2_SSH="ssh kube@192.168.100.11"
 
 EXAMPLES
     Run a random scenario:
@@ -116,8 +116,8 @@ EXAMPLES
         ./break-cluster-multinode.sh --reset
 
     SSH into either node:
-        ssh node1    # control plane
-        ssh node2    # worker
+        ssh controlplane-1    # control plane
+        ssh nodes-1    # worker
 
 DIAGNOSTIC COMMANDS
     After a scenario runs, SSH into either node and diagnose the problem:
@@ -125,10 +125,10 @@ DIAGNOSTIC COMMANDS
         kubectl get nodes -o wide
         kubectl get pods -A -o wide
         kubectl describe node <name>
-        ssh node1 'sudo systemctl status kubelet containerd'
-        ssh node2 'sudo systemctl status kubelet containerd'
-        ssh node1 'sudo journalctl -u kubelet -n 50'
-        ssh node2 'sudo journalctl -u kubelet -n 50'
+        ssh controlplane-1 'sudo systemctl status kubelet containerd'
+        ssh nodes-1 'sudo systemctl status kubelet containerd'
+        ssh controlplane-1 'sudo journalctl -u kubelet -n 50'
+        ssh nodes-1 'sudo journalctl -u kubelet -n 50'
 
 SCENARIO CATEGORIES
     1-3:   Single-node configuration failures (kubelet, containerd)
@@ -136,11 +136,11 @@ SCENARIO CATEGORIES
     8-15:  Multi-node operational issues (cordon, policy, routing)
 
 FILES
-    node1:
+    controlplane-1:
         /etc/kubernetes/manifests/kube-apiserver.yaml
         /etc/kubernetes/manifests/etcd.yaml
 
-    node2:
+    nodes-1:
         /etc/kubernetes/kubelet.conf
         /var/lib/kubelet/config.yaml
         /etc/hosts
@@ -200,16 +200,16 @@ print_banner() {
   echo "journalctl, and your knowledge of the cluster"
   echo "to find and fix the problem."
   echo ""
-  echo "  ssh node1    # control plane"
-  echo "  ssh node2    # worker"
+  echo "  ssh controlplane-1    # control plane"
+  echo "  ssh nodes-1    # worker"
   echo ""
   echo "Diagnostic starting points:"
   echo "  kubectl get nodes -o wide"
   echo "  kubectl get pods -A -o wide"
   echo "  kubectl describe node <name>"
-  echo "  ssh node1 'sudo systemctl status kubelet containerd'"
-  echo "  ssh node2 'sudo systemctl status kubelet containerd'"
-  echo "  ssh node1 'sudo journalctl -u kubelet -n 50'"
+  echo "  ssh controlplane-1 'sudo systemctl status kubelet containerd'"
+  echo "  ssh nodes-1 'sudo systemctl status kubelet containerd'"
+  echo "  ssh controlplane-1 'sudo journalctl -u kubelet -n 50'"
   echo ""
   echo "To reset: $0 --reset"
   echo "============================================="
@@ -225,66 +225,66 @@ list_scenarios() {
 # Scenarios
 # -------------------------------------------------------------------
 
-# 1: kubelet on node2 pointed at the wrong API server port
+# Difficulty: Beginner | Concept: kubelet kubeconfig server URL | Symptom: nodes-1 goes NotReady; kubelet cannot reach API server
 scenario_1() {
-  backup_if_needed node2 /etc/kubernetes/kubelet.conf
-  run_on node2 "sed -i 's|server: https://192.168.122.10:6443|server: https://192.168.122.10:7777|' /etc/kubernetes/kubelet.conf && systemctl restart kubelet" 2>/dev/null || true
+  backup_if_needed nodes-1 /etc/kubernetes/kubelet.conf
+  run_on nodes-1 "sed -i 's|server: https://192.168.100.10:6443|server: https://192.168.100.10:7777|' /etc/kubernetes/kubelet.conf && systemctl restart kubelet" 2>/dev/null || true
 }
 
-# 2: cgroup driver mismatch on node2 (kubelet says cgroupfs, containerd says systemd)
+# Difficulty: Intermediate | Concept: cgroup driver consistency | Symptom: nodes-1 NotReady; kubelet logs show cgroup errors, containers fail to start
 scenario_2() {
-  backup_if_needed node2 /var/lib/kubelet/config.yaml
-  run_on node2 "sed -i 's|cgroupDriver: systemd|cgroupDriver: cgroupfs|' /var/lib/kubelet/config.yaml && systemctl restart kubelet" 2>/dev/null || true
+  backup_if_needed nodes-1 /var/lib/kubelet/config.yaml
+  run_on nodes-1 "sed -i 's|cgroupDriver: systemd|cgroupDriver: cgroupfs|' /var/lib/kubelet/config.yaml && systemctl restart kubelet" 2>/dev/null || true
 }
 
-# 3: containerd stopped on node2 (worker drops Ready)
+# Difficulty: Beginner | Concept: container runtime service state | Symptom: nodes-1 drops to NotReady; all running containers on that node stop
 scenario_3() {
-  run_on node2 "systemctl stop containerd" 2>/dev/null || true
+  run_on nodes-1 "systemctl stop containerd" 2>/dev/null || true
 }
 
-# 4: kube-proxy DaemonSet has a broken image reference
+# Difficulty: Intermediate | Concept: DaemonSet image reference | Symptom: kube-proxy pods CrashLoopBackOff; all Service ClusterIPs stop routing
 scenario_4() {
   $NODE1_SSH "kubectl -n kube-system patch daemonset kube-proxy --type='json' -p='[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/image\",\"value\":\"registry.k8s.io/kube-proxy:v9.99.99\"}]'" 2>/dev/null || true
 }
 
-# 5: API server advertise-address points at a non-routable IP
+# Difficulty: Advanced | Concept: API server advertise address | Symptom: static pod restarts; workers lose API connectivity; new joins fail
 scenario_5() {
-  backup_if_needed node1 /etc/kubernetes/manifests/kube-apiserver.yaml
-  run_on node1 "sed -i 's|--advertise-address=192.168.122.10|--advertise-address=192.168.122.99|' /etc/kubernetes/manifests/kube-apiserver.yaml" 2>/dev/null || true
+  backup_if_needed controlplane-1 /etc/kubernetes/manifests/kube-apiserver.yaml
+  run_on controlplane-1 "sed -i 's|--advertise-address=192.168.100.10|--advertise-address=192.168.100.99|' /etc/kubernetes/manifests/kube-apiserver.yaml" 2>/dev/null || true
 }
 
-# 6: Calico DaemonSet image reference broken
+# Difficulty: Intermediate | Concept: CNI DaemonSet image reference | Symptom: calico-node pods crash; cross-node pod traffic fails; nodes may go NotReady
 scenario_6() {
   $NODE1_SSH "kubectl -n calico-system patch daemonset calico-node --type='json' -p='[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/image\",\"value\":\"docker.io/calico/node:v9.99.99\"}]'" 2>/dev/null || true
 }
 
-# 7: CoreDNS forced to a node selector no node satisfies
+# Difficulty: Intermediate | Concept: pod scheduling node selector | Symptom: CoreDNS pods stay Pending; all cluster DNS lookups time out
 scenario_7() {
   $NODE1_SSH "kubectl -n kube-system patch deployment coredns --type='json' -p='[{\"op\":\"add\",\"path\":\"/spec/template/spec/nodeSelector\",\"value\":{\"disktype\":\"ssd-fast\"}}]'" 2>/dev/null || true
 }
 
-# 8: node2 cordoned (workloads will not schedule there)
+# Difficulty: Beginner | Concept: node scheduling state (cordon) | Symptom: new pods refuse to schedule on nodes-1; existing pods keep running
 scenario_8() {
-  $NODE1_SSH "kubectl cordon node2" 2>/dev/null || true
+  $NODE1_SSH "kubectl cordon nodes-1" 2>/dev/null || true
 }
 
-# 9: kubelet on node2 misses the static pod path entirely
+# Difficulty: Intermediate | Concept: staticPodPath in kubelet config | Symptom: nodes-1 kubelet restarts; static pods on worker are not managed correctly
 scenario_9() {
-  backup_if_needed node2 /var/lib/kubelet/config.yaml
-  run_on node2 "sed -i 's|staticPodPath: /etc/kubernetes/manifests|staticPodPath: /etc/kubernetes/no-such-dir|' /var/lib/kubelet/config.yaml && systemctl restart kubelet" 2>/dev/null || true
+  backup_if_needed nodes-1 /var/lib/kubelet/config.yaml
+  run_on nodes-1 "sed -i 's|staticPodPath: /etc/kubernetes/manifests|staticPodPath: /etc/kubernetes/no-such-dir|' /var/lib/kubelet/config.yaml && systemctl restart kubelet" 2>/dev/null || true
 }
 
-# 10: etcd data dir permissions broken on node1
+# Difficulty: Advanced | Concept: etcd directory permissions | Symptom: etcd pod restarts; API server loses ability to read/write cluster state
 scenario_10() {
-  run_on node1 "chmod 000 /var/lib/etcd" 2>/dev/null || true
+  run_on controlplane-1 "chmod 000 /var/lib/etcd" 2>/dev/null || true
 }
 
-# 11: kube-proxy config has wrong clusterCIDR (breaks Service routing)
+# Difficulty: Advanced | Concept: kube-proxy clusterCIDR | Symptom: Service routing broken cluster-wide; pod IPs still reachable directly
 scenario_11() {
   $NODE1_SSH "kubectl -n kube-system get cm kube-proxy -o yaml > /tmp/kp.yaml && sed -i 's|clusterCIDR: 10.244.0.0/16|clusterCIDR: 10.99.0.0/16|' /tmp/kp.yaml && kubectl apply -f /tmp/kp.yaml && kubectl -n kube-system delete pods -l k8s-app=kube-proxy" 2>/dev/null || true
 }
 
-# 12: NetworkPolicy in default namespace denies all ingress to all pods
+# Difficulty: Intermediate | Concept: NetworkPolicy deny-all | Symptom: all pods in default namespace unreachable from inside the cluster
 scenario_12() {
   $NODE1_SSH "kubectl apply -f - <<'EOF'
 apiVersion: networking.k8s.io/v1
@@ -298,18 +298,18 @@ spec:
 EOF" 2>/dev/null || true
 }
 
-# 13: bridge sysctl turned off on node2 (pods on node2 cannot reach Services)
+# Difficulty: Advanced | Concept: kernel sysctl bridge-nf-call-iptables | Symptom: pods on nodes-1 cannot reach Service ClusterIPs; pod IPs still work
 scenario_13() {
-  run_on node2 "sysctl -w net.bridge.bridge-nf-call-iptables=0" 2>/dev/null || true
+  run_on nodes-1 "sysctl -w net.bridge.bridge-nf-call-iptables=0" 2>/dev/null || true
 }
 
-# 14: /etc/hosts on node2 broken so it cannot resolve node1
+# Difficulty: Intermediate | Concept: /etc/hosts hostname resolution | Symptom: nodes-1 kubelet logs show "no such host" for controlplane-1
 scenario_14() {
-  backup_if_needed node2 /etc/hosts
-  run_on node2 "sed -i '/node1/d' /etc/hosts" 2>/dev/null || true
+  backup_if_needed nodes-1 /etc/hosts
+  run_on nodes-1 "sed -i '/controlplane-1/d' /etc/hosts" 2>/dev/null || true
 }
 
-# 15: kubeadm join tokens revoked (worker rejoin would fail)
+# Difficulty: Beginner | Concept: kubeadm join token validity | Symptom: no immediate visible symptom; cluster is normal but no worker can re-join
 scenario_15() {
   $NODE1_SSH "kubeadm token list -o jsonpath='{range .items[*]}{.token}{\"\n\"}{end}' | xargs -I {} kubeadm token delete {}" 2>/dev/null || true
 }
@@ -320,7 +320,7 @@ scenario_15() {
 reset_all() {
   echo "=== Restoring both nodes ==="
 
-  # Restore backed-up files on node2
+  # Restore backed-up files on nodes-1
   $NODE2_SSH "sudo bash" <<'REMOTE'
 files=(
   /etc/kubernetes/kubelet.conf
@@ -338,7 +338,7 @@ systemctl start containerd 2>/dev/null || true
 systemctl restart kubelet
 REMOTE
 
-  # Restore backed-up files on node1
+  # Restore backed-up files on controlplane-1
   $NODE1_SSH "sudo bash" <<'REMOTE'
 files=(
   /etc/kubernetes/manifests/kube-apiserver.yaml
@@ -357,7 +357,7 @@ REMOTE
   $NODE1_SSH "kubectl -n kube-system patch daemonset kube-proxy --type='json' -p='[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/image\",\"value\":\"registry.k8s.io/kube-proxy:v1.35.3\"}]'" 2>/dev/null || true
   $NODE1_SSH "kubectl -n calico-system patch daemonset calico-node --type='json' -p='[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/image\",\"value\":\"docker.io/calico/node:v3.31.0\"}]'" 2>/dev/null || true
   $NODE1_SSH "kubectl -n kube-system patch deployment coredns --type='json' -p='[{\"op\":\"remove\",\"path\":\"/spec/template/spec/nodeSelector\"}]'" 2>/dev/null || true
-  $NODE1_SSH "kubectl uncordon node1 node2" 2>/dev/null || true
+  $NODE1_SSH "kubectl uncordon controlplane-1 nodes-1" 2>/dev/null || true
   $NODE1_SSH "kubectl delete networkpolicy -n default deny-everything-break" 2>/dev/null || true
 
   # Restore kube-proxy clusterCIDR
@@ -374,8 +374,8 @@ REMOTE
   $NODE1_SSH "kubectl get pods -A | grep -Ev 'Running|Completed'" 2>/dev/null || echo "  (all pods Running)"
   echo ""
   echo "If components are still not Ready after a minute, check:"
-  echo "  ssh node1 'sudo systemctl status kubelet'"
-  echo "  ssh node2 'sudo systemctl status kubelet'"
+  echo "  ssh controlplane-1 'sudo systemctl status kubelet'"
+  echo "  ssh nodes-1 'sudo systemctl status kubelet'"
 }
 
 # -------------------------------------------------------------------

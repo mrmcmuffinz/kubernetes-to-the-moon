@@ -2,7 +2,7 @@
 
 **Based on:** [kubernetes-the-harder-way/05_Installing_Kubernetes_Control_Plane.md](https://github.com/ghik/kubernetes-the-harder-way/blob/linux/docs/05_Installing_Kubernetes_Control_Plane.md)
 
-**Simplified for:** A single-node cluster running inside a QEMU VM (`node1`, IP `10.0.2.15`), where all control plane and worker components run on the same machine.
+**Simplified for:** A single-node cluster running inside a QEMU VM (`controlplane-1`, IP `10.0.2.15`), where all control plane and worker components run on the same machine.
 
 **Version updates from the original guide:**
 
@@ -70,7 +70,7 @@ etcd_version=3.6.9
 k8s_version=1.35.3
 
 vmaddr=10.0.2.15
-vmname=node1
+vmname=controlplane-1
 ```
 
 ## Installing etcd
@@ -161,7 +161,7 @@ sudo ETCDCTL_API=3 etcdctl member list \
   --key=/etc/etcd/kubernetes-key.pem
 ```
 
-You should see one member listed with the name `node1`.
+You should see one member listed with the name `controlplane-1`.
 
 ## Installing kube-apiserver
 

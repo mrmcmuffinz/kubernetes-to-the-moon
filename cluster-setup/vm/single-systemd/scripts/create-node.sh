@@ -7,14 +7,14 @@
 # with port forwarding for host-to-VM access.
 #
 # Usage: ./create-node.sh [node-name]
-#   node-name defaults to "node1" if not provided.
+#   node-name defaults to "controlplane-1" if not provided.
 
 set -euo pipefail
 
 # -------------------------------------------------------------------
 # Configuration
 # -------------------------------------------------------------------
-NODE_NAME="${1:-node1}"
+NODE_NAME="${1:-controlplane-1}"
 BASE_DIR="$HOME/cka-lab"
 IMAGE_DIR="$BASE_DIR/images"
 NODE_DIR="$BASE_DIR/$NODE_NAME"
@@ -98,12 +98,15 @@ create_qcow2() {
 echo "=== Creating VM disk ==="
 if [[ -f "$NODE_DIR/${NODE_NAME}.qcow2" ]]; then
     echo "WARNING: Disk $NODE_DIR/${NODE_NAME}.qcow2 already exists."
-    read -rp "Overwrite? (y/N): " confirm
-    if [[ "$confirm" == "y" && "$confirm" == "Y" ]]; then
-      create_qcow2
+    confirm=""
+    read -rt 10 -p "Overwrite? (y/N, default N in 10s): " confirm || confirm=""
+    if [[ "${confirm,,}" == "y" ]]; then
+        create_qcow2
+    else
+        echo "Keeping existing disk. Continuing with cloud-init and script generation."
     fi
 else
-  create_qcow2
+    create_qcow2
 fi
 
 

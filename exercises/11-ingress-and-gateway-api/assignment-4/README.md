@@ -22,7 +22,7 @@ Level 1 is NGINX Gateway Fabric basics: install, create a Gateway, attach an HTT
 
 ## Prerequisites
 
-Complete `exercises/11-11-ingress-and-gateway-api/assignment-3` first. This assignment reuses Gateway API CRDs and vocabulary. Envoy Gateway from assignment 3 can stay installed; the tutorial runs NGINX Gateway Fabric alongside it.
+Complete `exercises/11-ingress-and-gateway-api/assignment-3` first. This assignment reuses Gateway API CRDs and vocabulary. Envoy Gateway from assignment 3 can stay installed; the tutorial runs NGINX Gateway Fabric alongside it.
 
 ## Cluster Requirements
 

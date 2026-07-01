@@ -498,18 +498,18 @@ kubectl wait --for=condition=Ready pods --all -n ex-3-2-ns1 --timeout=60s
 kubectl wait --for=condition=Ready pods --all -n ex-3-2-ns2 --timeout=60s
 ```
 
-**Task:** Test which client can reach the target. Explain why based on AND/OR semantics.
+**Task:** The policy uses AND semantics. Modify it to use OR semantics so that both client-alpha and client-beta can reach the target.
 
 **Verification:**
 
 ```bash
 TARGET_IP=$(kubectl get pod target -n ex-3-2-ns1 -o jsonpath='{.status.podIP}')
 
-# client-alpha (in ns1)
-kubectl exec -n ex-3-2-ns1 client-alpha -- wget -qO- --timeout=2 http://$TARGET_IP 2>&1 | head -3
+# client-alpha (in ns1) -- should reach target
+kubectl exec -n ex-3-2-ns1 client-alpha -- wget -qO- --timeout=2 http://$TARGET_IP && echo "client-alpha: ALLOWED"
 
-# client-beta (in ns2)
-timeout 3 kubectl exec -n ex-3-2-ns2 client-beta -- wget -qO- --timeout=2 http://$TARGET_IP 2>&1 || echo "BLOCKED"
+# client-beta (in ns2) -- should also reach target after fix
+kubectl exec -n ex-3-2-ns2 client-beta -- wget -qO- --timeout=2 http://$TARGET_IP && echo "client-beta: ALLOWED"
 ```
 
 ---
@@ -736,7 +736,7 @@ DB_IP=$(kubectl get pod database -n ex-4-3 -o jsonpath='{.status.podIP}')
 kubectl exec -n ex-4-3 frontend -- wget -qO- --timeout=2 http://$BACKEND_IP && echo "frontend->backend: OK"
 
 # backend -> database
-kubectl exec -n ex-4-3 backend -- wget -qO- --timeout=2 http://$DB_IP && echo "backend->database: OK"
+kubectl exec -n ex-4-3 backend -- curl -sf --connect-timeout 2 http://$DB_IP && echo "backend->database: OK"
 
 # frontend -> database (should be blocked)
 timeout 3 kubectl exec -n ex-4-3 frontend -- wget -qO- --timeout=2 http://$DB_IP || echo "frontend->database: BLOCKED"
@@ -822,7 +822,7 @@ DB_IP=$(kubectl get pod db -n ex-5-1-db -o jsonpath='{.status.podIP}')
 kubectl exec -n ex-5-1-web web -- wget -qO- --timeout=2 http://$API_IP && echo "web->api: OK"
 
 # api -> db
-kubectl exec -n ex-5-1-api api -- wget -qO- --timeout=2 http://$DB_IP && echo "api->db: OK"
+kubectl exec -n ex-5-1-api api -- curl -sf --connect-timeout 2 http://$DB_IP && echo "api->db: OK"
 
 # web -> db (blocked)
 timeout 3 kubectl exec -n ex-5-1-web web -- wget -qO- --timeout=2 http://$DB_IP || echo "web->db: BLOCKED"
@@ -895,14 +895,18 @@ EOF
 kubectl wait --for=condition=Ready pods --all -n ex-5-2 --timeout=60s
 ```
 
-**Task:** Two policies apply to the secure-server. Determine if the client can reach it and explain why based on additive policy behavior.
+**Task:** The secure-server should not be reachable from the client, but one of the two policies is permitting unwanted access. Find the policy responsible and remove it so the server is properly protected.
 
 **Verification:**
 
 ```bash
 SERVER_IP=$(kubectl get pod secure-server -n ex-5-2 -o jsonpath='{.status.podIP}')
 
-kubectl exec -n ex-5-2 client -- wget -qO- --timeout=2 http://$SERVER_IP 2>&1 | head -3
+# Before fix - client can reach server
+kubectl exec -n ex-5-2 client -- wget -qO- --timeout=2 http://$SERVER_IP && echo "Before fix: ALLOWED"
+
+# After fix - should be blocked
+timeout 3 kubectl exec -n ex-5-2 client -- wget -qO- --timeout=2 http://$SERVER_IP || echo "After fix: BLOCKED"
 ```
 
 ---
@@ -988,10 +992,10 @@ DB_IP=$(kubectl get pod db -n ex-5-3 -o jsonpath='{.status.podIP}')
 kubectl exec -n ex-5-3 tester -- wget -qO- --timeout=2 http://$WEB_IP && echo "tester->web: OK"
 
 # web -> api (should work)
-kubectl exec -n ex-5-3 web -- wget -qO- --timeout=2 http://$API_IP && echo "web->api: OK"
+kubectl exec -n ex-5-3 web -- curl -sf --connect-timeout 2 http://$API_IP && echo "web->api: OK"
 
 # api -> db (should work)
-kubectl exec -n ex-5-3 api -- wget -qO- --timeout=2 http://$DB_IP && echo "api->db: OK"
+kubectl exec -n ex-5-3 api -- curl -sf --connect-timeout 2 http://$DB_IP && echo "api->db: OK"
 
 # tester -> api (blocked)
 timeout 3 kubectl exec -n ex-5-3 tester -- wget -qO- --timeout=2 http://$API_IP || echo "tester->api: BLOCKED"

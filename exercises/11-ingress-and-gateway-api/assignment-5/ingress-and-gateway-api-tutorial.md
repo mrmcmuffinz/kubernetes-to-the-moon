@@ -33,20 +33,20 @@ Create the tutorial namespace.
 kubectl create namespace tutorial-mig
 ```
 
-## Part 1: Install `ingress2gateway` CLI v1.0.0
+## Part 1: Install `ingress2gateway` CLI v1.1.0
 
-Download the pinned release for Linux amd64 from GitHub.
+This is a host-side CLI tool. Install it on your workstation, not on cluster nodes. Use
+the architecture matching your workstation (amd64 for x86_64 hosts), not the architecture
+of your cluster nodes.
 
 ```bash
-VERSION=v1.0.0
-ARCH=linux_amd64
 curl -L -o /tmp/ingress2gateway.tar.gz \
-  "https://github.com/kubernetes-sigs/ingress2gateway/releases/download/${VERSION}/ingress2gateway_${VERSION#v}_${ARCH}.tar.gz"
+  https://github.com/kubernetes-sigs/ingress2gateway/releases/download/v1.1.0/ingress2gateway_Linux_x86_64.tar.gz
 tar -xzf /tmp/ingress2gateway.tar.gz -C /tmp
 sudo install /tmp/ingress2gateway /usr/local/bin/ingress2gateway
 
 ingress2gateway --version
-# Expected: includes v1.0.0 in the output
+# Expected: includes v1.1.0 in the output
 ```
 
 Alternative (without sudo): move the binary into a user-writable location on your `PATH`.

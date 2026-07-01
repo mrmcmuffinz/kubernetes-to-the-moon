@@ -21,8 +21,8 @@ internet
 | Host                                |
 |   br0 (192.168.122.1/24)            |
 |     |                               |
-|     +--- tap0 ---- node1 (.10)      |
-|     +--- tap1 ---- node2 (.11)      |
+|     +--- tap0 ---- controlplane-1 (.10)      |
+|     +--- tap1 ---- nodes-1 (.11)      |
 +-------------------------------------+
 ```
 
@@ -127,11 +127,44 @@ The bridge has its own subnet that does not exist anywhere outside the host. For
 ### Step 1: Identify the Uplink Interface
 
 ```bash
-UPLINK=$(ip route | awk '/default/ {print $5; exit}')
-echo "Uplink interface: $UPLINK"
+ip route show default
 ```
 
-This will be something like `wlp4s0`, `eth0`, or `enp3s0` depending on your hardware.
+A single-NIC host prints one line:
+
+```
+default via 192.168.2.1 dev eno1 proto dhcp metric 100
+```
+
+**Multi-NIC hosts:** If you have multiple physical interfaces (e.g., an onboard NIC plus a multi-port PCIe card), each one with a DHCP lease gets its own default route. The kernel uses the route with the lowest `metric` value:
+
+```
+default via 192.168.2.1 dev eno1     proto dhcp metric 100
+default via 192.168.2.1 dev enp6s0f0 proto dhcp metric 101
+default via 192.168.2.1 dev enp6s0f1 proto dhcp metric 102
+...
+```
+
+Read the winning interface automatically:
+
+```bash
+UPLINK=$(ip route show default | awk 'NR==1 {print $5}')
+echo "Uplink: $UPLINK"
+```
+
+If the result is not the interface you intend to use for internet traffic, override it:
+
+```bash
+# Override -- set this to your preferred wired or WiFi interface
+UPLINK=eno1
+```
+
+Verify the chosen interface reaches your router:
+
+```bash
+ip route show default dev "$UPLINK"
+# Expected: default via <gateway-IP> dev <UPLINK> ...
+```
 
 ### Step 2: Enable IP Forwarding
 
@@ -274,3 +307,114 @@ The host is now configured to support bridge networking for the two VMs:
 | QEMU helper binary | `/usr/lib/qemu/qemu-bridge-helper` | setuid root, creates TAP interfaces |
 
 The next document creates the two VMs and attaches them to this bridge.
+
+---
+
+## Option B: Physical NIC Uplink (No NAT)
+
+This option requires a **spare dedicated physical NIC** that is not your primary host
+network connection. It connects `br0` directly to your physical LAN so VMs get real
+IPs and are reachable from any machine on your network without NAT or port forwarding.
+
+**When to use this:**
+- Your host has a multi-port NIC (e.g., a quad-port card) with unused ports
+- You want VMs to appear as first-class devices on your LAN
+- You want to eliminate NAT overhead
+
+**What changes compared to Option A:**
+- One spare physical NIC joins `br0` as a bridge slave
+- VMs get static IPs in your physical network range instead of `192.168.122.x`
+- No NAT rule needed (VMs reach the internet directly through your router)
+- All `192.168.122.x` IP references in the remaining guide documents must be replaced
+  with your chosen physical network IPs
+
+### Step 1: Identify a Spare NIC
+
+```bash
+ip -brief link show
+```
+
+On a host with an onboard NIC (`eno1`) for management plus a quad-port card
+(`enp6s0f0`--`enp6s0f3`), any unused port on the quad card works.
+
+### Step 2: Release the Spare NIC's DHCP Lease
+
+```bash
+# Replace enp6s0f3 with your chosen spare NIC
+sudo ip addr flush dev enp6s0f3
+```
+
+Prevent DHCP from reclaiming it:
+
+```bash
+sudo tee /etc/systemd/network/15-br0-slave.network > /dev/null <<'EOF'
+[Match]
+Name=enp6s0f3
+
+[Network]
+Bridge=br0
+EOF
+```
+
+### Step 3: Update the Bridge Network Configuration
+
+```bash
+# Replace 192.168.2.1 with your router/gateway IP
+# Replace 192.168.2.200 with an unused static IP for the host bridge
+sudo tee /etc/systemd/network/20-br0.network > /dev/null <<'EOF'
+[Match]
+Name=br0
+
+[Network]
+Address=192.168.2.200/24
+Gateway=192.168.2.1
+DNS=8.8.8.8
+ConfigureWithoutCarrier=yes
+IPForward=ipv4
+EOF
+
+sudo systemctl restart systemd-networkd
+ip addr show br0
+```
+
+### Step 4: Tell NetworkManager to Ignore the Bridge Slave (Desktop Only)
+
+```bash
+if systemctl is-active NetworkManager > /dev/null 2>&1; then
+  sudo tee /etc/NetworkManager/conf.d/10-unmanaged-br0.conf > /dev/null <<'EOF'
+[keyfile]
+unmanaged-devices=interface-name:br0;interface-name:tap*;interface-name:enp6s0f3
+EOF
+  sudo systemctl restart NetworkManager
+fi
+```
+
+### Step 5: Skip the NAT Steps
+
+Skip Part 3 (NAT for Outbound Traffic) entirely.
+
+### Step 6: Choose VM IP Addresses
+
+Pick static IPs in your physical network range outside the DHCP pool. Example for a
+network where the router is `192.168.2.1` and DHCP hands out `.100`--`.199`:
+
+| Role | Suggested Static IP |
+|------|---------------------|
+| Host bridge (`br0`) | `192.168.2.200` |
+| `controlplane-1` | `192.168.2.210` |
+| `nodes-1` | `192.168.2.211` |
+
+In the remaining documents, substitute these IPs wherever `192.168.122.x` appears.
+The cloud-init netplan configuration in document 02 is the most important place -- set
+each VM's static address, gateway (`192.168.2.1`), and remove the `network: config:
+disabled` override used in the QEMU user-mode path.
+
+### Step 7: Verify
+
+```bash
+bridge link show          # slave NIC appears as bridge member
+ip addr show br0          # bridge has physical network IP
+ping -c 2 -I br0 192.168.2.1   # router reachable through bridge
+```
+
+After starting a VM: `ssh kube@192.168.2.210` -- no port number, no forwarding.
