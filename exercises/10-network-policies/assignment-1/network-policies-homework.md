@@ -131,6 +131,8 @@ kubectl wait --for=condition=Ready pods --all -n ex-1-2 --timeout=60s
 
 **Task:** Create a NetworkPolicy named `restrict-egress` that allows the restricted-pod to send egress traffic only to pods with `app=target-a`.
 
+**Note:** Use pod IPs for verification, not Service DNS names. An egress policy blocks all outbound traffic that isn't explicitly allowed -- including UDP/TCP port 53 to CoreDNS. If you expose a Service and try to reach it by hostname, the DNS lookup itself will be silently dropped and the connection will hang. DNS egress is covered in assignment 2.
+
 **Verification:**
 
 ```bash

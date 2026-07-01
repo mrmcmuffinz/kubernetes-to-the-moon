@@ -221,6 +221,86 @@ cat new.key | base64 -w0
 
 ---
 
+## Exercise 4.4 Solution
+
+### Diagnosis
+
+On a kind cluster, worker nodes are accessible via `nerdctl exec` into the node container. First, identify a worker node:
+
+```bash
+kubectl get nodes
+# Pick a worker node (e.g., kind-worker)
+```
+
+Access the node and locate the kubelet PKI directory:
+
+```bash
+nerdctl exec kind-worker find /var/lib/kubelet/pki
+```
+
+Output typically shows:
+- `/var/lib/kubelet/pki/kubelet-client-current.pem` (client certificate)
+- `/var/lib/kubelet/pki/kubelet.crt` (server certificate)
+- `/var/lib/kubelet/pki/kubelet.key` (server private key)
+
+The client certificate is used when the kubelet connects to the API server (outbound authentication). The server certificate is used when the API server connects to the kubelet for operations like `kubectl exec`, `kubectl logs`, or metrics scraping (inbound authentication).
+
+### Extracting Certificate Information
+
+For the **client certificate**, extract Issuer and Extended Key Usage:
+
+```bash
+nerdctl exec kind-worker openssl x509 -in /var/lib/kubelet/pki/kubelet-client-current.pem -noout -issuer
+# Output: issuer=CN = kubernetes
+
+nerdctl exec kind-worker openssl x509 -in /var/lib/kubelet/pki/kubelet-client-current.pem -noout -text | grep "Extended Key Usage" -A1
+# Output:
+#     X509v3 Extended Key Usage:
+#         TLS Web Client Authentication
+```
+
+The client certificate is issued by the cluster CA (`CN = kubernetes`) and has Extended Key Usage set to TLS Web Client Authentication, confirming its role as an authentication credential for outbound connections.
+
+For the **server certificate**, extract the same information:
+
+```bash
+nerdctl exec kind-worker openssl x509 -in /var/lib/kubelet/pki/kubelet.crt -noout -issuer
+# Output: issuer=CN = kind-worker-ca@<timestamp>
+
+nerdctl exec kind-worker openssl x509 -in /var/lib/kubelet/pki/kubelet.crt -noout -text | grep "Extended Key Usage" -A1
+# Output:
+#     X509v3 Extended Key Usage:
+#         TLS Web Server Authentication
+```
+
+The server certificate is issued by a node-local CA (the Issuer CN includes the node hostname plus a timestamp, not `kubernetes`), and its Extended Key Usage is TLS Web Server Authentication, confirming its role as the certificate presented to incoming connections.
+
+### The Fix
+
+Write the information to `/tmp/kubelet-cert-info.txt`:
+
+```bash
+cat > /tmp/kubelet-cert-info.txt <<EOF
+Client Certificate:
+  Path: /var/lib/kubelet/pki/kubelet-client-current.pem
+  Issuer: CN = kubernetes
+  Extended Key Usage: TLS Web Client Authentication
+
+Server Certificate:
+  Path: /var/lib/kubelet/pki/kubelet.crt
+  Issuer: CN = kind-worker-ca@<timestamp>
+  Extended Key Usage: TLS Web Server Authentication
+EOF
+```
+
+Replace `<timestamp>` with the actual timestamp from the server certificate's Issuer field. The key distinction is:
+- **Client cert**: Cluster CA issuer, client authentication usage (kubelet → API server)
+- **Server cert**: Node-local CA issuer, server authentication usage (API server → kubelet)
+
+This two-certificate setup is how the kubelet authenticates both outbound (as a client to the API server) and inbound (as a server for kubectl operations).
+
+---
+
 ## Exercise 5.1 Solution
 
 **Certificate Audit Script:**
