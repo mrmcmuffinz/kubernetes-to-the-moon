@@ -1,6 +1,11 @@
-# CKA Homework Assignment Plan
+# CKA Homework Assignment Plan (Historical)
 
-**Status:** All 45 assignments content-complete as of 2026-04-19. All six phases complete (infrastructure fixes, skill strengthening, topic scoping, content generation/regeneration, technique weaving, verification and housekeeping). Remediation plan closed.
+> This document is a historical record of the original CKA exam prep corpus. It maps CKA exam
+> competencies to the 45 assignments in exercises/01-19. It is no longer the active plan.
+> The live registry of all assignments (including new topics beyond CKA) is in
+> `.claude/skills/cka-prompt-builder/references/assignment-registry.md`.
+
+**Status:** All 45 assignments content-complete as of 2026-04-19.
 **Last updated:** 2026-04-19
 
 ---
