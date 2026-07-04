@@ -1,152 +1,80 @@
-# CKA Exam Prep
+# Kubernetes to the Moon
 
-Hands-on practice material for the Certified Kubernetes Administrator (CKA) exam, organized as a series of topic-focused assignments. Each assignment consists of a tutorial that teaches a topic end-to-end, a homework set with 15 progressive exercises, and a complete answer key. The material is designed to complement Mumshad Mannambeth's Udemy CKA course and the integrated KodeKloud labs, not replace them. The course videos teach concepts, the KodeKloud labs drill exam-style tasks, and the content in this repository provides additional deliberate practice on a cluster the learner controls.
+Hands-on Kubernetes learning material organized as a series of topic-focused assignments. Each assignment consists of a tutorial that teaches a topic end-to-end, a homework set with 15 progressive exercises, and a complete answer key. The goal is to build real operational fluency with Kubernetes, not just conceptual familiarity.
 
-## Context
+## What's Here
 
-The CKA exam is performance-based rather than multiple-choice. It gives the candidate a live Kubernetes cluster and a set of tasks to complete within two hours, with kubernetes.io/docs as the only permitted reference. Passing requires fluency with kubectl at the keyboard, not just conceptual understanding. The exercises in this repository are built to develop that fluency through repetition on a local kind cluster, with a focus on the kinds of tasks the exam actually tests (constructing pods and controllers, diagnosing failures from events and logs, configuring scheduling and resources, and recovering from broken configurations under time pressure).
+The repository covers core Kubernetes operations, networking, storage, security, cluster infrastructure, and more advanced topics like supply chain security and runtime threat detection. Assignments build progressively: early topics establish fundamentals (pods, workloads, configuration), later topics go deeper into security hardening, extensibility, and cluster internals.
 
-All content assumes a kind cluster running rootless containerd via nerdctl. A single-node cluster is sufficient for most topics, but assignments covering scheduling, controllers, networking, and troubleshooting require a multi-node cluster (1 control-plane plus 3 workers). Setup instructions for the multi-node cluster live in the first assignment that needs them.
+All content assumes a kind cluster running rootless containerd via nerdctl. A single-node cluster is sufficient for most topics; assignments covering scheduling, controllers, networking, and troubleshooting require a multi-node cluster (1 control-plane plus 3 workers). Cluster setup instructions live in `docs/cluster-setup.md`.
 
-## CKA Exam Coverage
+For learners who want to understand how Kubernetes works at the infrastructure level, `exercises/20-cluster-setup/` contains guides for building clusters from scratch on QEMU/KVM virtual machines and on Raspberry Pi hardware.
 
-The assignments in this repository are organized to cover all five CKA exam domains. The `cka-homework-plan.md` file at the repo root contains the full competency coverage matrix, generation sequence, and status tracking. The summary below shows which exercise directories map to each domain.
+## How to Work Through an Assignment
 
-| Domain | Weight | Exercise Directories |
-|---|---|---|
-| Cluster Architecture, Installation & Configuration | 25% | rbac, cluster-lifecycle, helm, kustomize, crds-and-operators, tls-and-certificates, admission-controllers |
-| Workloads & Scheduling | 15% | pods (1-7), security-contexts, jobs-and-cronjobs, autoscaling, statefulsets, admission-controllers, pod-security |
-| Services & Networking | 20% | services, ingress-and-gateway-api (1-5), coredns, network-policies |
-| Storage | 10% | storage |
-| Troubleshooting | 30% | troubleshooting (1-4) |
+Each assignment follows the same three-phase workflow.
 
-Security topics are distributed across domains rather than grouped into a single series, matching how the CKA exam tests them: RBAC and TLS under Cluster Architecture, security contexts and Pod Security Admission under Workloads & Scheduling, network policies under Services & Networking, and certificate troubleshooting under Troubleshooting.
+First, read the tutorial end-to-end with a cluster open in a terminal. The tutorial teaches one or more worked examples from start to finish, and the real value comes from running the commands as you read rather than just reading them. Every tutorial uses a dedicated namespace (`tutorial-<topic>`) so it won't conflict with the homework exercises. Clean up the tutorial namespace before moving to homework.
 
-The `cka-homework-plan.md` file at the repo root tracks all 45 assignments in the corpus, all of which are content-complete as of 2026-04-19 (the 38 original-scope assignments plus the 2-assignment ingress expansion and the 5 new single-assignment topics). The `docs/` directory contains the audit findings and the six-phase remediation plan, which is now complete.
+Second, work through the homework without looking at the answers. The 15 exercises are organized into five levels: Levels 1 and 2 build basic and multi-concept fluency, Level 3 is debugging broken configurations, Level 4 is realistic production-style build tasks, and Level 5 is advanced debugging and comprehensive tasks. Each exercise is self-contained with its own setup and verification commands. Debugging exercises include the broken configuration in the setup so you don't have to type it; your job is to identify and fix the problem from the symptoms.
+
+Third, compare your solutions to the answer key. The answers file includes a common-mistakes section that captures the specific traps a topic tends to produce, and a verification cheat sheet worth internalizing. For debugging exercises, the answer key explains not just what was broken but how to diagnose it from kubectl output.
 
 ## Repository Layout
 
 ```
-cka-exam-prep/
-├── CLAUDE.md                          # Claude Code project context
-├── README.md                          # This file
-├── LEARNING_PATH.md                   # Ordered curriculum with progress tracking
-├── LICENSE                            # Apache 2.0
-├── cka-homework-plan.md               # Master plan: coverage matrix, generation sequence
-│
-├── docs/                              # Audit, remediation plan, and cluster setup recipes
-│   ├── README.md                      # Index of docs files
-│   ├── audit-findings.md              # Full audit with resolution status per finding
-│   ├── remediation-plan.md            # Phased plan with task-level status tracking
-│   └── cluster-setup.md               # Single source of truth for kind cluster configs
-│
-├── .claude/                           # Claude Code configuration
-│   ├── settings.local.json
-│   └── skills/                        # Skills that drive the assignment generation pipeline
-│       ├── cka-prompt-builder/        # Produces topic READMEs and assignment prompts
-│       │   ├── SKILL.md
-│       │   └── references/
-│       │       ├── cka-curriculum.md      # Official CKA domains and competencies (v1.35)
-│       │       ├── course-section-map.md  # Mumshad course sections mapped to competencies
-│       │       └── assignment-registry.md # Scope and status of all assignments
-│       │
-│       └── k8s-homework-generator/    # Produces tutorial, homework, and answers from a prompt
-│           ├── SKILL.md
-│           └── references/
-│               └── base-template.md   # Structural conventions with hard gates
-│
-└── exercises/                         # Numbered by recommended study order (see LEARNING_PATH.md)
-    ├── 01-pods/                       # Pod-focused series (Assignments 1-7)
-    ├── 02-jobs-and-cronjobs/          # Batch workloads (1)
-    ├── 03-statefulsets/               # Stateful workloads (1)
-    ├── 04-autoscaling/                # HPA, VPA concepts, in-place pod resize (1)
-    ├── 05-helm/                       # Chart install, upgrade, rollback, values (1-3)
-    ├── 06-kustomize/                  # Overlays, patches, transformers, components (1-3)
-    ├── 07-storage/                    # PV, PVC, StorageClass, dynamic provisioning (1-3)
-    ├── 08-services/                   # ClusterIP, NodePort, LoadBalancer, endpoints (1-3)
-    ├── 09-coredns/                    # DNS resolution, CoreDNS config, debugging (1-3)
-    ├── 10-network-policies/           # Ingress/egress rules, namespace isolation (1-3)
-    ├── 11-ingress-and-gateway-api/    # Ingress v1 and Gateway API (1-5)
-    ├── 12-rbac/                       # RBAC namespace-scoped and cluster-scoped (1-2)
-    ├── 13-security-contexts/          # Identity, capabilities, seccomp (1-3)
-    ├── 14-pod-security/               # Pod Security Standards and PSA (1)
-    ├── 15-crds-and-operators/         # CRDs, custom resources, operator pattern (1-3)
-    ├── 16-admission-controllers/      # Built-ins and ValidatingAdmissionPolicy (1)
-    ├── 17-cluster-lifecycle/          # kubeadm, upgrades, etcd backup/restore (1-3)
-    ├── 18-tls-and-certificates/       # K8s PKI, cert creation, Certificates API (1-3)
-    └── 19-troubleshooting/            # Cross-domain capstone series (1-4)
+exercises/                          Numbered by recommended study order
+  01-pods/                          Pod spec, config, probes, scheduling, resources, controllers (1-7)
+  02-jobs-and-cronjobs/             Batch workloads
+  03-statefulsets/                  Stateful workloads, stable identity, headless services
+  04-autoscaling/                   HPA, VPA, in-place pod resize
+  05-helm/                          Chart install, upgrade, rollback, templates (1-3)
+  06-kustomize/                     Overlays, patches, transformers, components (1-3)
+  07-storage/                       PV, PVC, StorageClass, dynamic provisioning (1-3)
+  08-services/                      ClusterIP, NodePort, LoadBalancer, endpoints (1-3)
+  09-coredns/                       DNS resolution, CoreDNS config, debugging (1-3)
+  10-network-policies/              Ingress/egress rules, namespace isolation (1-3)
+  11-ingress-and-gateway-api/       Ingress v1 and Gateway API with controller diversity (1-5)
+  12-rbac/                          Namespace-scoped and cluster-scoped access control (1-2)
+  13-security-contexts/             Identity, capabilities, seccomp (1-3)
+  14-pod-security/                  Pod Security Standards and Pod Security Admission
+  15-crds-and-operators/            CRDs, custom resources, operator pattern (1-3)
+  16-admission-controllers/         Built-ins and ValidatingAdmissionPolicy
+  17-cluster-lifecycle/             kubeadm, upgrades, etcd backup/restore (1-3)
+  18-tls-and-certificates/          Kubernetes PKI, cert creation, Certificates API (1-3)
+  19-troubleshooting/               Cross-domain capstone series (1-4)
+  20-cluster-setup/                 VM and Raspberry Pi cluster build guides
+
+docs/                               Cluster setup recipes and supporting documentation
+.claude/skills/                     Assignment generation pipeline (Claude Code)
 ```
-
-"Content complete" means the four content files (README, tutorial, homework, answers) exist. As of 2026-04-19, every assignment in the corpus is content-complete. All six remediation phases are complete and the plan is closed.
-
-Each topic directory contains a topic-level `README.md` that explains why the topic has its number of assignments, what each one covers, scope boundaries, cluster requirements, and recommended order. This is the scoping document that determines how a topic is decomposed before any assignment content is generated.
-
-Each assignment subdirectory contains five files:
-
-- `prompt.md` is the prompt used to generate the assignment content. Keeping it alongside the output makes the material reproducible and makes it obvious what was in scope (and what was deliberately deferred to later assignments).
-- `README.md` is the assignment's own overview, covering prerequisites, estimated time commitment, and the recommended workflow specific to that topic.
-- `<topic>-tutorial.md` is a step-by-step walkthrough teaching the topic with worked examples. This is where concepts are introduced and the reference tables live.
-- `<topic>-homework.md` contains 15 progressive exercises organized into five difficulty levels (three exercises per level). Exercise headings are intentionally bare (no descriptive titles) so that debugging exercises don't leak hints about what's broken.
-- `<topic>-homework-answers.md` contains complete solutions with explanations, including a common-mistakes section and a verification commands cheat sheet.
-
-## Assignment Generation
-
-New assignments are generated using two Claude Code skills in the `skills/` directory. The `cka-prompt-builder` skill first produces a topic-level README that scopes how many assignments a topic needs and what each covers, then produces detailed `prompt.md` files for individual assignments by consulting the CKA curriculum, the Mumshad course structure, and the registry of existing assignments. The `k8s-homework-generator` skill takes a prompt and produces the four content files (assignment README, tutorial, homework, answers) following the structural conventions documented in its base template.
-
-The generation sequence is tied to the daily study plan. As each course section is completed, the corresponding assignments become available for generation. The `cka-homework-plan.md` file documents the full sequence and dependencies. Troubleshooting assignments are generated last because they are cross-domain capstones that combine failure modes from multiple topic areas.
-
-For details on the generation workflow, see `CLAUDE.md`.
-
-## Recommended Study Progression
-
-See **[LEARNING_PATH.md](LEARNING_PATH.md)** for the full ordered curriculum with progress checkboxes, time estimates, and CKA domain coverage per phase.
-
-## How to Work Through an Assignment
-
-Each assignment follows the same three-phase workflow, which mirrors how the content is structured across its files.
-
-First, read the tutorial end-to-end with a cluster open in a terminal. The tutorial teaches one or more worked examples from start to finish, and the real value comes from actually running the commands as you read rather than just reading them. Every tutorial uses a dedicated namespace (typically `tutorial-<topic>`) so it won't conflict with the homework exercises, which live in their own per-exercise namespaces. Clean up the tutorial namespace before moving to homework.
-
-Second, work through the homework without looking at the answers. The 15 exercises are organized into five levels: Levels 1 and 2 build basic and multi-concept fluency, Level 3 is debugging broken configurations, Level 4 is realistic production-style build tasks, and Level 5 is advanced debugging and comprehensive tasks. Each exercise is self-contained with its own setup commands and its own verification commands. Debugging exercises (Levels 3 and 5) include the broken YAML in the setup so you don't have to type it; your job is to identify and fix the problem from the symptoms.
-
-Third, compare your solutions to the answer key. The answers file is not just a reference for correct commands; the common-mistakes section captures the specific traps that this topic tends to produce, and the verification cheat sheet is meant to be skimmed and internalized. For debugging exercises, the answer key explains not just what was broken but how you would have diagnosed it from kubectl output, which is the actual exam skill.
 
 ## Conventions
 
-The assignments use a consistent set of conventions to keep the material predictable across topics.
+**Namespace isolation.** Every exercise uses its own namespace, typically `ex-<level>-<exercise>` (for example, `ex-3-2`). Tutorial content uses `tutorial-<topic>`. This prevents accidental interaction between exercises and makes cleanup straightforward.
 
-**Namespace isolation.** Every exercise uses its own namespace, typically named `ex-<level>-<exercise>` (for example, `ex-3-2` for the second exercise of Level 3). Tutorial content uses `tutorial-<topic>`. This prevents accidental interaction between exercises and makes cleanup straightforward.
+**No latest tags.** Container images always use explicit version tags. The `latest` tag is avoided because it breaks rollout demonstrations and creates reproducibility problems across runs.
 
-**No latest tags.** Container images always use explicit version tags (`nginx:1.25`, `busybox:1.36`, `alpine:3.20`). The `latest` tag is explicitly avoided because it breaks rollout demonstrations and creates reproducibility problems across runs.
+**Imperative and declarative both, honestly labeled.** Where imperative kubectl commands are realistic, they are shown alongside the declarative YAML. Where they are not, the tutorial is explicit that declarative is the only practical path.
 
-**Imperative and declarative both, honestly labeled.** Where imperative kubectl commands are realistic, they are shown alongside the declarative YAML. Where they are not (for instance, configuring probes, projected volumes, or affinity rules), the tutorial is explicit that declarative is the only practical path, usually by way of `kubectl run --dry-run=client -o yaml` followed by editing.
+**Anti-spoiler debugging exercises.** Exercise headings are bare (`### Exercise 3.1`) rather than titled. This prevents headings from leaking hints about what is broken.
 
-**Anti-spoiler debugging exercises.** Exercise headings in the homework files are bare (for example, `### Exercise 3.1`) rather than titled (`### Exercise 3.1: The pod with the wrong node selector`). This prevents the heading from leaking hints about the problem. Objective statements are written to describe the desired end state rather than the nature of the bug.
+**base64 encoding.** Secret values use `base64 -w0` (one step, no line wrapping).
 
-**base64 encoding.** When Secret values need base64 encoding, the assignments use `base64 -w0` (one step, no line wrapping) rather than `base64 | tr -d '\n'`. The latter is more error-prone and produces the same result by a longer path.
+**No em dashes anywhere.** Commas, periods, or parentheses instead.
 
-**No em dashes anywhere.** The content uses commas, periods, or parentheses instead. This is a stylistic preference that carries through the prompts and outputs consistently.
-
-**Prose over fragmented bullets.** Explanatory sections use narrative paragraphs rather than stacked single-sentence declarations. Bullet lists appear where lists genuinely belong (verification commands, field references, failure modes to check) and not where prose would read better.
+**Prose over fragmented bullets.** Explanatory sections use narrative paragraphs. Bullet lists appear where lists genuinely belong.
 
 ## Prerequisites
 
-The material assumes a working local Kubernetes cluster created with kind using the rootless nerdctl provider, a current kubectl client, and familiarity with basic Linux shell usage. Specific Kubernetes version requirements are noted in individual assignment READMEs where they matter (notably, native sidecars in Assignment 6 require Kubernetes 1.29 or later).
-
-The cluster setup command for a single-node kind cluster is:
+A working local Kubernetes cluster created with kind using the rootless nerdctl provider, a current kubectl client, and familiarity with basic Linux shell usage. The single-node cluster command:
 
 ```bash
 KIND_EXPERIMENTAL_PROVIDER=nerdctl kind create cluster
 ```
 
-The multi-node setup required from Assignment 4 onward uses a kind config file and is documented in `exercises/01-pods/assignment-4/README.md`.
-
-## Beyond the Exam: Understanding Kubernetes Internals
-
-The exercises in this repository are built around kind clusters because they start fast, clean up easily, and closely match the exam environment. For learners who want to understand how Kubernetes works under the hood (what kubeadm actually does, how certificates flow through the system, how CNI plugins program routes, how etcd clustering works), the `cluster-setup/` directory contains four guides for building Kubernetes clusters from scratch on QEMU/KVM virtual machines.
-
-These guides are optional and not required for exam preparation. They exist for the subset of learners who find that understanding the internals makes the exam topics click. See `cluster-setup/README.md` for an introduction to the four guides and help choosing which one to start with.
+Multi-node setup (required from exercises/01-pods/assignment-4 onward) is documented in `docs/cluster-setup.md`.
 
 ## License
 
-This repository is licensed under the Apache License, Version 2.0. See the `LICENSE` file for the full text. The prompts, tutorials, homework exercises, and answer keys are all covered by this license, which means they can be reused, modified, and redistributed (including for commercial purposes) with attribution. If you use this material to build your own study resources or teach others, a link back is appreciated but not required.
+Apache License, Version 2.0. See `LICENSE` for the full text. The prompts, tutorials, homework exercises, and answer keys are all covered by this license and can be reused, modified, and redistributed with attribution.
