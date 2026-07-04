@@ -1,5 +1,7 @@
 # Kubernetes to the Moon
 
+![Kubernetes to the Moon](kubernetest-to-the-moon.png)
+
 Hands-on Kubernetes learning material organized as a series of topic-focused assignments. Each assignment consists of a tutorial that teaches a topic end-to-end, a homework set with 15 progressive exercises, and a complete answer key. The goal is to build real operational fluency with Kubernetes, not just conceptual familiarity.
 
 ## What's Here
