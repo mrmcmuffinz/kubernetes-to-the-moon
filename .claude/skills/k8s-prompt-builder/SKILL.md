@@ -1,20 +1,20 @@
 ---
-name: cka-prompt-builder
+name: k8s-prompt-builder
 description: >
   Use this skill whenever the user asks to create, build, draft, or generate a homework
-  prompt for a CKA exam topic, or to scope out how many assignments a topic needs. This
-  includes requests like "build me a prompt for Network Policies," "scope out the Storage
-  topic," "how many assignments does Networking need," "what should the Storage assignment
-  cover," "generate the next assignment prompt," or any reference to creating scoped
-  prompts for the cka-exam-prep exercise series. Also trigger when the user asks which
-  assignment to generate next, what topics are remaining, or how a CKA competency maps
-  to an assignment. This skill produces topic-level README.md files (scoping) and
-  assignment-level prompt.md files (detailed specs) that the k8s-homework-generator
-  skill later consumes. Always read this skill before writing any README.md or prompt.md
-  file or advising on assignment scoping.
+  prompt for a Kubernetes topic, or to scope out how many assignments a topic needs. This
+  includes requests like "build me a prompt for Supply Chain Security," "scope out the
+  Runtime Security topic," "how many assignments does Cluster Hardening need," "what should
+  the OPA/Gatekeeper assignment cover," "generate the next assignment prompt," or any
+  reference to creating scoped prompts for new exercises in this repository. Also trigger
+  when the user asks which assignment to generate next, what topics are remaining, or how
+  a Kubernetes competency maps to an assignment. This skill produces topic-level README.md
+  files (scoping) and assignment-level prompt.md files (detailed specs) that the
+  k8s-homework-generator skill later consumes. Always read this skill before writing any
+  README.md or prompt.md file or advising on assignment scoping.
 ---
 
-# CKA Prompt Builder
+# Kubernetes Prompt Builder
 
 ## What This Skill Does
 
@@ -27,23 +27,24 @@ This skill handles two related tasks in the assignment generation pipeline:
 2. **Prompt writing:** Produces detailed `prompt.md` files for individual assignments
    within a topic, specifying exact subtopics, resource gates, and exercise conventions.
 
-The prompt builder does the domain-knowledge work: it knows the CKA exam curriculum,
-understands which course sections feed each topic, tracks what other assignments already
-exist, and decomposes broad topics into focused, non-overlapping scopes. The user does
-not need deep expertise in a topic to get a well-scoped prompt. They just need to know
-the topic area and optionally which subtopics they want emphasized.
+The prompt builder does the domain-knowledge work: it knows the existing assignment corpus,
+understands the Kubernetes topic landscape (including CKA, CKAD, and CKS material), tracks
+what other assignments already exist, and decomposes broad topics into focused,
+non-overlapping scopes. The user does not need deep expertise in a topic to get a
+well-scoped prompt. They just need to know the topic area and optionally which subtopics
+they want emphasized.
 
 ## When to Use
 
 Trigger this skill when the user:
 
-- Asks to scope out a topic ("how many assignments does Networking need")
-- Asks to create or generate a prompt for a specific CKA topic
+- Asks to scope out a topic ("how many assignments does Supply Chain Security need")
+- Asks to create or generate a prompt for any Kubernetes topic
 - Asks what the next assignment to generate should be
 - Asks how to decompose a broad topic into assignment-sized pieces
-- Asks which CKA competencies are not yet covered
+- Asks which Kubernetes competencies or topic areas are not yet covered
 - Wants to review or adjust the scope of a planned assignment before generating it
-- References the assignment registry, coverage matrix, or generation sequence
+- References the assignment registry or asks what topics are planned
 
 ## Reference Files
 
@@ -51,9 +52,9 @@ Read these before producing any topic README or prompt:
 
 | File | Purpose | When to Read |
 |---|---|---|
-| `references/cka-curriculum.md` | Official CKA domains, competencies, and weights | Always |
-| `references/course-section-map.md` | Maps Mumshad course sections to CKA competencies | Always |
 | `references/assignment-registry.md` | Tracks all existing and planned assignments with scope | Always |
+| `references/cka-curriculum.md` | CKA exam domains and competencies; also a useful map of core Kubernetes topics | For topics in exercises 01-19 (original CKA corpus) |
+| `references/course-section-map.md` | Maps Mumshad course sections to Kubernetes competencies | For topics covered by the Mumshad CKA course; skip for new CKS/CKAD-specific topics |
 
 ## Two-Step Output
 
@@ -65,17 +66,18 @@ confirmed to exist) before any prompt.md is written for that topic.
 
 The topic README must contain:
 
-1. **Topic title and CKA domain mapping** with the specific competencies covered
+1. **Topic title and domain mapping** with the specific competencies or skill areas covered
 2. **Rationale for the number of assignments** explaining why the topic warrants
    one, two, or more assignments. The rationale should reference the subtopic count,
-   the breadth of the CKA competencies involved, and whether natural breakpoints
-   exist in the material.
+   the breadth of the competencies involved, and whether natural breakpoints exist in
+   the material.
 3. **Assignment summary table** listing each assignment with a short description of
    what it covers and its prerequisites
 4. **Scope boundaries** stating what is explicitly not covered by this topic and
    which other topic handles it
 5. **Cluster requirements** noting whether assignments in this topic need single-node
-   or multi-node kind clusters, any special configuration (CNI, ingress controller, etc.)
+   or multi-node kind clusters, any special configuration (CNI, ingress controller,
+   Falco, Gatekeeper, etc.)
 6. **Recommended order** if assignments within the topic build on each other
 
 **Sizing guidance for the decomposition:**
@@ -103,7 +105,7 @@ topic README exists and the number of assignments has been determined.
 The prompt.md must contain:
 
 1. **Header block** with assignment metadata (series name, assignment number, prerequisites,
-   CKA domain and competencies covered, course sections referenced)
+   topic domain and competencies covered, any relevant course or certification reference)
 
 2. **Scope declaration** with two clearly separated sections:
    - "In scope for this assignment" listing every subtopic, concept, and kubectl skill
@@ -113,15 +115,16 @@ The prompt.md must contain:
 
 3. **Environment requirements** specifying whether the assignment needs a single-node or
    multi-node kind cluster, any special kind configuration, and any tools beyond kubectl
+   (Falco, OPA/Gatekeeper, Trivy, Cosign, gVisor, etc.)
 
 4. **Resource gate** listing which Kubernetes resource types exercises are permitted to
-   use. For assignments early in the course, this is a restricted list. For assignments
-   after the Networking section, this is "all CKA resources."
+   use. For assignments early in the curriculum (before networking topics), this is a
+   restricted list. For later assignments, this is "all Kubernetes resources."
 
 5. **Topic-specific conventions** capturing anything unique to this topic that the
-   homework generator needs to know (for example, RBAC assignments need user/certificate
-   creation instructions for kind clusters, Storage assignments need StorageClass
-   provisioner setup, Networking assignments need a CNI that supports NetworkPolicy)
+   homework generator needs to know (for example, security topics may need specific kernel
+   or node access requirements; supply chain topics may need registry access; runtime
+   sandboxing topics need RuntimeClass and node-level configuration)
 
 6. **Cross-references** with backward references to prerequisites ("this assignment
    assumes the learner has completed...") and forward references to future assignments
@@ -131,18 +134,22 @@ The prompt.md must contain:
 
 When building a topic README or prompt, follow these steps:
 
-1. Read all three reference files to understand the current state of the assignment corpus.
+1. Read `assignment-registry.md` to understand the current state of the corpus: what
+   exists, what is planned, and what each existing assignment covers.
 
-2. Identify which CKA competencies the requested topic covers by consulting
-   `cka-curriculum.md`.
+2. Identify the topic area. For topics in exercises 01-19 (original CKA corpus), consult
+   `cka-curriculum.md` to map competencies. For new topics (container images, cluster
+   hardening, supply chain security, runtime sandboxing, OPA/Gatekeeper, runtime security,
+   secrets management, system hardening), use the topic's own domain knowledge and the
+   registry's planned-topic entries as the scope anchor.
 
 3. Check `assignment-registry.md` to see what adjacent assignments already cover. This
    prevents overlap. If a subtopic is already covered elsewhere, defer it explicitly
    with a cross-reference.
 
-4. Consult `course-section-map.md` to identify which Mumshad course sections and lectures
-   feed this topic. This helps calibrate the depth and ensures the prompt references
-   concepts the learner has actually studied.
+4. Consult `course-section-map.md` if the topic is covered by the Mumshad CKA course.
+   For new topics beyond the original CKA scope, this file will not have relevant
+   entries and can be skipped.
 
 5. **For topic READMEs:** Enumerate all subtopics for the topic, count them, identify
    natural breakpoints, and determine the number of assignments. Write the topic README
@@ -152,9 +159,9 @@ When building a topic README or prompt, follow these steps:
    exercise granularity. Each subtopic should map to at least 2-3 exercises across the
    five difficulty levels.
 
-7. Determine the resource gate. If the assignment unlocks before the Networking section
-   (generation order 1-6 in the homework plan), list permitted resources explicitly. If
-   it unlocks after, state "all CKA resources are in scope."
+7. Determine the resource gate. If the assignment is early in the curriculum (before
+   networking topics), list permitted resources explicitly. If it comes after the
+   networking section, state "all Kubernetes resources are in scope."
 
 8. **Scope drift check (prompts only).** Before writing the prompt, compare the
    subtopic list you are about to include against what the topic README scoped for
@@ -179,7 +186,7 @@ When building a topic README or prompt, follow these steps:
 Before finalizing a topic README, verify:
 
 - The subtopic count justifies the proposed number of assignments
-- The assignment summary table accounts for all CKA competencies the topic covers
+- The assignment summary table accounts for all competencies the topic covers
 - Scope boundaries clearly state what is not covered and where it lives
 - No overlap with other topic READMEs
 
@@ -189,10 +196,10 @@ Before finalizing a prompt, verify:
 - The prompt's subtopic count falls within the topic README's scoped range for this
   assignment. If it does not, the scope drift check in step 8 must have been resolved
   before reaching this point.
-- Every CKA competency listed in the header block has at least one matching subtopic
+- Every competency listed in the header block has at least one matching subtopic
   in the scope declaration
 - No subtopic overlaps with an existing assignment's scope (check the registry)
-- The resource gate is consistent with the assignment's position in the generation sequence
+- The resource gate is consistent with the assignment's position in the curriculum
 - Forward and backward references point to real assignments that exist or are planned
 - The scope targets 5-6 core subtopics (sufficient for 15 exercises across five levels
   with 2-3 exercises per subtopic). Assignments with 8+ subtopics should be flagged for
@@ -207,6 +214,6 @@ Before finalizing a prompt, verify:
 - No em dashes anywhere. Use commas, periods, or parentheses.
 - Narrative paragraph flow in prose sections, not stacked single-sentence declarations.
 - Use the same topic slug for directory names and file prefixes (for example,
-  "network-policies" in both the directory path and the file names).
+  "supply-chain-security" in both the directory path and the file names).
 - Subtopic lists in the scope declaration should be grouped logically and use italicized
   group headers, matching the format established in the pod series prompts.

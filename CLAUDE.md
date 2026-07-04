@@ -28,14 +28,14 @@ Two skills in `.claude/skills/` support the assignment generation pipeline.
 manually generating content inline. See `.claude/AGENT_DELEGATION_GUIDE.md` for the complete
 decision tree on when to delegate vs do-it-yourself.
 
-### cka-prompt-builder
+### k8s-prompt-builder
 
 Produces topic-level README.md files (scoping how many assignments a topic needs) and
 assignment-level prompt.md files (detailed specs for each assignment). It knows the existing
-assignment corpus and Kubernetes topic structure. Use it when scoping a new topic or building
-a prompt for a specific assignment.
+assignment corpus and Kubernetes topic structure across CKA, CKAD, and CKS material. Use it
+when scoping a new topic or building a prompt for a specific assignment.
 
-Reference files in `.claude/skills/cka-prompt-builder/references/`:
+Reference files in `.claude/skills/k8s-prompt-builder/references/`:
 - `cka-curriculum.md` has the CKA exam domains and competencies. Also useful as a reference
   for Kubernetes topic coverage even beyond the exam context.
 - `course-section-map.md` maps Mumshad course sections (S1-S18) to Kubernetes competencies.
@@ -61,16 +61,16 @@ Reference file in `.claude/skills/k8s-homework-generator/references/`:
 
 Skills are invoked using the `/` prefix in Claude Code:
 
-- `/cka-prompt-builder` - Scope a topic or build a prompt for an assignment
+- `/k8s-prompt-builder` - Scope a topic or build a prompt for an assignment
 - `/k8s-homework-generator` - Generate the four content files from a prompt
 
 Example workflow:
 ```
 User: "Scope out the Supply Chain Security topic"
-→ /cka-prompt-builder reads references, produces exercises/22-supply-chain-security/README.md
+→ /k8s-prompt-builder reads references, produces exercises/22-supply-chain-security/README.md
 
 User: "Generate prompt for Supply Chain Security assignment 1"
-→ /cka-prompt-builder produces exercises/22-supply-chain-security/assignment-1/prompt.md
+→ /k8s-prompt-builder produces exercises/22-supply-chain-security/assignment-1/prompt.md
 
 User: "Generate the assignment from that prompt"
 → /k8s-homework-generator produces the 4 content files
@@ -138,7 +138,7 @@ generation input), `README.md` (assignment overview for the learner), `<topic>-t
 ## Common Tasks
 
 - **Find what topics exist**: Read `assignment-registry.md`.
-- **Scope a new topic**: Use `/cka-prompt-builder` with the topic name.
+- **Scope a new topic**: Use `/k8s-prompt-builder` with the topic name.
 - **Generate an assignment**: First create the prompt (if not present), then run
   `/k8s-homework-generator`.
 - **Update the registry**: After generating, edit

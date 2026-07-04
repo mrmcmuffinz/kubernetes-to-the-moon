@@ -154,7 +154,7 @@ Most learners do not work through all six. Common patterns:
 
 ## Relationship to Main Exercises
 
-The 45 assignments in `exercises/` are the core of this repository. They are built to develop exam fluency through repetition on a kind cluster. Each assignment has a tutorial, 15 progressive exercises, and a complete answer key. The content is designed to be worked through in sequence, following the `LEARNING_PATH.md` curriculum.
+The assignments in `exercises/` are the core of this repository. Each assignment has a tutorial, 15 progressive exercises, and a complete answer key. The exercises are numbered by recommended study order, working from foundational topics outward.
 
 The VM guides in this directory are supplementary. They exist for learners who want to go deeper on specific topics after completing the relevant main exercises. The table below maps each guide to the exercises that share its subject matter.
 

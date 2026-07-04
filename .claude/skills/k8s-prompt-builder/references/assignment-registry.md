@@ -1,15 +1,15 @@
 # Assignment Registry
 
-**Last updated:** 2026-04-19
+**Last updated:** 2026-07-04
 
 ---
 
 ## Purpose
 
-This file tracks every homework assignment in the cka-exam-prep repository: what exists,
-what each assignment covers, and what it explicitly defers. The prompt builder consults
-this registry before writing any new prompt to prevent scope overlap and to generate
-accurate cross-references.
+This file tracks every homework assignment in this repository: what exists, what each
+assignment covers, and what it explicitly defers. The prompt builder consults this registry
+before writing any new prompt to prevent scope overlap and to generate accurate
+cross-references.
 
 When a new assignment is generated, update this file with its scope summary and
 cross-references.
@@ -18,16 +18,17 @@ cross-references.
 
 ## Status Summary
 
-All 45 assignments in the corpus are content-complete as of 2026-04-18:
+**Exercises 01-19:** 45 assignments content-complete as of 2026-04-19.
 
-- 38 pre-Phase-4 assignments (pods 1-7; rbac 1-2; tls-and-certificates 1-3; security-contexts 1-3; cluster-lifecycle 1-3; helm 1-3; kustomize 1-3; crds-and-operators 1-3; services 1-3; ingress-and-gateway-api 1-3 pre-restructure; coredns 1-3; network-policies 1-3; storage 1-3; troubleshooting 1-4)
-- 2 new ingress assignments (4 and 5) from the D8 restructure
-- 5 new topic assignments (autoscaling/1, jobs-and-cronjobs/1, statefulsets/1, admission-controllers/1, pod-security/1)
+- pods 1-7, rbac 1-2, tls-and-certificates 1-3, security-contexts 1-3, cluster-lifecycle 1-3,
+  helm 1-3, kustomize 1-3, crds-and-operators 1-3, services 1-3, ingress-and-gateway-api 1-5,
+  coredns 1-3, network-policies 1-3, storage 1-3, troubleshooting 1-4, autoscaling/1,
+  jobs-and-cronjobs/1, statefulsets/1, admission-controllers/1, pod-security/1
 
-Phase 4 completed all 19 full-assignment regens plus 3 surgical regens under the stricter quality gates. Phase 5 (technique weaving) and Phase 6 (verification and housekeeping) in `docs/remediation-plan.md` track small follow-up work.
+**Exercise 20:** `exercises/20-cluster-setup/` contains VM and Raspberry Pi cluster build
+guides. Not structured as assignments (no tutorial/homework/answers files).
 
-`Generation order` fields are preserved as historical record. For current
-status, see `docs/remediation-plan.md`.
+**Exercises 21+:** Planned topics listed at the bottom of this file. None have content yet.
 
 ---
 
@@ -971,3 +972,151 @@ bare-metal. The prompt should note where kind behavior diverges from real cluste
 
 **Cross-domain scenarios:** These exercises combine networking failures with application
 and service configuration issues.
+
+---
+
+## Planned Topics (Exercises 21+)
+
+None of these topics have content files yet. Scope each with `/k8s-prompt-builder` before
+generating assignments. The numbering below is a starting point; adjust if topics are added
+out of order.
+
+### exercises/21-container-images (CKAD gap)
+
+**Status:** Planned, not started
+**Origin:** CKAD-specific material not covered in the CKA corpus
+
+**Planned scope:**
+- Dockerfile writing (FROM, RUN, COPY, CMD, ENTRYPOINT, ENV, EXPOSE, WORKDIR)
+- Multi-stage builds for smaller production images
+- Image layering and layer caching
+- Distroless and minimal base images
+- OCI image format
+- Pushing images to a local registry in kind
+- Image tag conventions and digest pinning
+
+**Defers to:** supply-chain-security (image scanning, signing)
+
+---
+
+### exercises/22-cluster-hardening (CKS)
+
+**Status:** Planned, not started
+**Origin:** CKS domain: Cluster Setup and Cluster Hardening
+
+**Planned scope:**
+- kube-bench and CIS Kubernetes Benchmark
+- API server hardening flags (anonymous auth, authorization modes, admission plugins)
+- Disabling insecure ports and unused features
+- Restricting access to etcd
+- Node metadata protection (restricting instance metadata service access)
+- Service account token automounting controls
+- Restricting kubeconfig permissions
+
+**Defers to:** rbac (already covered in 12-rbac), tls-and-certificates (already covered in 18)
+
+---
+
+### exercises/23-supply-chain-security (CKS)
+
+**Status:** Planned, not started
+**Origin:** CKS domain: Supply Chain Security
+
+**Planned scope:**
+- Trivy image scanning (vulnerabilities, misconfigurations)
+- Dockerfile best practices (non-root user, no secrets in layers, minimal base)
+- Image signing with Cosign
+- Signature verification with Cosign and policy enforcement
+- SBOM basics (generating and reading a software bill of materials)
+- Admission control for image policy (using OPA/Gatekeeper or ImagePolicyWebhook)
+
+**Defers to:** opa-gatekeeper (policy enforcement detail), container-images (Dockerfile writing)
+
+---
+
+### exercises/24-runtime-sandboxing (CKS)
+
+**Status:** Planned, not started
+**Origin:** CKS domain: Minimize Microservice Vulnerabilities
+
+**Planned scope:**
+- RuntimeClass resource (definition, scheduling)
+- gVisor (runsc) installation and configuration as a RuntimeClass handler
+- Kata Containers as an alternative sandbox runtime
+- Assigning RuntimeClass to pods
+- Trade-offs: performance overhead vs. isolation guarantees
+- Verifying sandbox isolation
+
+**Defers to:** system-hardening (kernel-level hardening without sandboxing)
+
+---
+
+### exercises/25-opa-gatekeeper (CKS)
+
+**Status:** Planned, not started
+**Origin:** CKS domain: Minimize Microservice Vulnerabilities
+
+**Planned scope:**
+- OPA/Gatekeeper architecture (controller, audit, webhook)
+- ConstraintTemplate authoring (Rego basics for Kubernetes policies)
+- Constraint resources (enforcement action: deny, dryrun, warn)
+- Audit mode and violation reporting
+- Common policy patterns (require labels, disallow privileged, restrict registries)
+- Mutation policies (assign default values, inject labels)
+
+**Defers to:** admission-controllers (built-in admission already covered in 16)
+
+---
+
+### exercises/26-runtime-security (CKS)
+
+**Status:** Planned, not started
+**Origin:** CKS domain: Monitoring, Logging and Runtime Security
+
+**Planned scope:**
+- Falco architecture (kernel module/eBPF probe, rules engine, outputs)
+- Writing and customizing Falco rules
+- Falco alerts and output channels
+- Kubernetes audit logging (audit policy, log backends)
+- Audit policy rule authoring (level, resources, verbs)
+- Detecting runtime threats from audit logs and Falco alerts
+- Immutable container patterns (readOnlyRootFilesystem, no shell)
+
+**Defers to:** system-hardening (AppArmor/seccomp as complementary controls)
+
+---
+
+### exercises/27-secrets-management (CKS)
+
+**Status:** Planned, not started
+**Origin:** CKS domain: Minimize Microservice Vulnerabilities
+
+**Planned scope:**
+- etcd encryption at rest (EncryptionConfiguration, aescbc, secretbox providers)
+- Verifying encryption (etcdctl get to confirm ciphertext)
+- Kubernetes ExternalSecret and SecretStore resources (external-secrets operator)
+- HashiCorp Vault basics for Kubernetes (agent injector, Vault CSI driver)
+- Secret rotation patterns
+- Avoiding secrets in environment variables vs. volume mounts
+
+**Defers to:** rbac (secret access control already covered in 12-rbac)
+
+---
+
+### exercises/28-system-hardening (CKS)
+
+**Status:** Planned, not started
+**Origin:** CKS domain: System Hardening
+
+**Planned scope:**
+- AppArmor profile authoring (complain vs enforce mode, profile syntax)
+- Applying AppArmor profiles to pods (annotations and securityContext)
+- Diagnosing AppArmor violations (kernel logs, audit)
+- seccomp profiles in depth (custom profiles beyond RuntimeDefault, syscall allow/deny lists)
+- seccomp violation debugging
+- Reducing node OS attack surface (unnecessary packages, services, open ports)
+- Kernel hardening concepts (namespaces, cgroups, capabilities model)
+
+**Note:** Surface-level seccomp and AppArmor are touched in 13-security-contexts/assignment-3.
+This topic goes deeper: profile authoring, violation debugging, and real-world hardened workloads.
+Scope must be carefully bounded to avoid overlap with assignment-3's introductory coverage.
