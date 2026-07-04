@@ -983,19 +983,29 @@ out of order.
 
 ### exercises/21-container-images (CKAD gap)
 
-**Status:** Planned, not started
+**Status:** Topic README written (2026-07-04). Two assignments scoped. No prompt.md or content files yet.
 **Origin:** CKAD-specific material not covered in the CKA corpus
 
-**Planned scope:**
-- Dockerfile writing (FROM, RUN, COPY, CMD, ENTRYPOINT, ENV, EXPOSE, WORKDIR)
-- Multi-stage builds for smaller production images
-- Image layering and layer caching
-- Distroless and minimal base images
-- OCI image format
-- Pushing images to a local registry in kind
-- Image tag conventions and digest pinning
+**Assignment 1: Dockerfile Authoring**
+- Instruction set (FROM, RUN, COPY, ADD, ENV, ARG, LABEL, EXPOSE, WORKDIR, USER)
+- ENTRYPOINT vs CMD (exec/shell form, override behavior, pod spec mapping)
+- Build context and .dockerignore
+- nerdctl build flags and usage
+- Image inspection (nerdctl inspect, nerdctl history, layer breakdown)
+- Non-root USER directive (build-time vs runtime identity distinction)
 
-**Defers to:** supply-chain-security (image scanning, signing)
+**Assignment 2: Optimization and Distribution**
+- Multi-stage builds (multiple FROM, COPY --from, size reduction)
+- Layer caching (ordering instructions, cache invalidation)
+- Base image selection (ubuntu, alpine, distroless, scratch trade-offs)
+- OCI image format (manifest, config, layers, digests vs tags)
+- Image tagging conventions (semver, :latest risks, digest pinning)
+- Registry operations (local registry with nerdctl, push/pull, kind integration)
+
+**Defers to:**
+- supply-chain-security (image scanning with Trivy, signing with Cosign, Dockerfile hardening)
+- security-contexts (pod-level runAsUser vs Dockerfile USER)
+- opa-gatekeeper (image policy enforcement)
 
 ---
 
