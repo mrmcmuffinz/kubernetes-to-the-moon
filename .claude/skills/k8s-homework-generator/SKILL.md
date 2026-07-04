@@ -7,7 +7,7 @@ description: >
   exercises for Network Policies," or any reference to producing the four-file
   assignment output (README, tutorial, homework, answers). Also trigger when the user
   asks to regenerate or update an existing assignment's content files. This skill
-  reads a prompt.md file (produced by the cka-prompt-builder skill) and generates the
+  reads a prompt.md file (produced by the k8s-prompt-builder skill) and generates the
   four deliverable files in the same directory. Always read this skill and its base
   template before generating any assignment files.
 ---
@@ -17,7 +17,7 @@ description: >
 ## What This Skill Does
 
 This skill takes a scoped prompt (a `prompt.md` file) and produces four structured
-files that together form a complete homework assignment for CKA exam preparation.
+files that together form a complete hands-on Kubernetes homework assignment.
 The prompt defines what to cover. This skill defines how to structure, format, and
 present that content.
 
@@ -42,7 +42,7 @@ Read this before generating any assignment:
 ## Input
 
 The generator expects a `prompt.md` file in the target assignment directory. This file
-is produced by the `cka-prompt-builder` skill and contains:
+is produced by the `k8s-prompt-builder` skill and contains:
 
 - Assignment metadata (series, number, prerequisites, CKA domain)
 - Scope declaration (in-scope subtopics, out-of-scope deferrals)
@@ -132,7 +132,7 @@ checklist form.
 
 **README (see base-template section "### 1. README.md"):**
 - [ ] Follows the canonical 9-section shape.
-- [ ] References `docs/cluster-setup.md` by anchor instead of inlining cluster commands.
+- [ ] References cluster setup docs by link instead of inlining cluster creation commands.
 - [ ] Uses narrative prose, not a metadata header block or tables-only layout.
 
 **Tutorial (see base-template section "### 2. <topic>-tutorial.md"):**
