@@ -1,4 +1,4 @@
-# Runtime Security Homework Answers — Assignment 1: Falco Threat Detection
+# Runtime Security Homework Answers: Assignment 1: Falco Threat Detection
 
 ---
 

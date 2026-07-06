@@ -215,7 +215,7 @@ curl -sI -H "Host: paths.example.test" http://localhost:8090/c
 
 pkill -f "port-forward.*$SVC" 2>/dev/null
 
-# NodePort alternative (externalTrafficPolicy: Local — must hit the node running the Envoy pod):
+# NodePort alternative (externalTrafficPolicy: Local - must hit the node running the Envoy pod):
 NODE=$(kubectl get pods -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-2-1 -o jsonpath='{.items[0].spec.nodeName}')
 NODEIP=$(kubectl get node $NODE -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
 NODEPORT=$(kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-namespace=ex-2-1 -o jsonpath='{.items[0].spec.ports[0].nodePort}')

@@ -1,4 +1,4 @@
-# Assignment Prompt: System Hardening — Assignment 1
+# Assignment Prompt: System Hardening: Assignment 1
 
 **Series:** System Hardening (1 of 2)
 **Topic slug:** system-hardening
@@ -6,11 +6,11 @@
 
 ## Metadata
 
-**Domain:** CKS — System Hardening (15%)
+**Domain:** CKS: System Hardening (15%)
 **Competencies:** AppArmor profile authoring, complain vs enforce mode, applying profiles to pods, violation debugging
 **Prerequisites:** 13-security-contexts/assignment-1, 01-pods/assignment-1
 
-## Scope — In Scope
+## Scope: In Scope
 
 *AppArmor architecture*
 - What AppArmor is: a Linux mandatory access control (MAC) system that restricts what a process can do based on a profile, enforced at the kernel level regardless of process privileges
@@ -60,7 +60,7 @@
 - Too-restrictive profile blocking a legitimate operation: switch to complain, reproduce, read logs, add rule
 - kubectl describe pod showing AppArmor-related events
 
-## Scope — Out of Scope
+## Scope: Out of Scope
 
 - seccomp profiles: covered in system-hardening/assignment-2
 - Capabilities (add/drop): covered in 13-security-contexts/assignment-2

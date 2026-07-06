@@ -39,7 +39,7 @@ Subtopics:
 ## Assignment 2: seccomp Profiles and Node Hardening
 
 Subtopics:
-- *seccomp profile types review:* Unconfined, RuntimeDefault, Localhost — establishing the baseline from 13-security-contexts/assignment-3
+- *seccomp profile types review:* Unconfined, RuntimeDefault, Localhost, establishing the baseline from 13-security-contexts/assignment-3
 - *Custom profile JSON format:* defaultAction (SCMP_ACT_ERRNO, SCMP_ACT_ALLOW, SCMP_ACT_LOG), syscalls list with names and action, architectures field
 - *Profile placement:* /var/lib/kubelet/seccomp/ on the node, kubelet --seccomp-profile-root, making profiles available in kind by copying to the kind node container
 - *Writing a custom profile:* starting from RuntimeDefault, adding specific syscall denials (ptrace, mount), building a minimal allow-list profile for a known workload

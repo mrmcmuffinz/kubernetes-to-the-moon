@@ -1,4 +1,4 @@
-# Assignment Prompt: Runtime Security — Assignment 1
+# Assignment Prompt: Runtime Security: Assignment 1
 
 **Series:** Runtime Security (1 of 2)
 **Topic slug:** runtime-security
@@ -6,11 +6,11 @@
 
 ## Metadata
 
-**Domain:** CKS — Monitoring, Logging and Runtime Security (20%)
+**Domain:** CKS - Monitoring, Logging and Runtime Security (20%)
 **Competencies:** Falco architecture, rule authoring, alert output, threat detection
 **Prerequisites:** 13-security-contexts/assignment-1, 01-pods/assignment-1
 
-## Scope — In Scope
+## Scope: In Scope
 
 *Falco architecture*
 - What Falco is: a runtime security tool that monitors system calls and Kubernetes API events
@@ -56,7 +56,7 @@
 - kubectl exec and cat /etc/shadow: observe the sensitive file rule
 - Confirming the alert appears in Falco logs/output
 
-## Scope — Out of Scope
+## Scope: Out of Scope
 
 - Kubernetes audit logging: covered in runtime-security/assignment-2
 - Falco sidekick (webhook forwarding): out of scope

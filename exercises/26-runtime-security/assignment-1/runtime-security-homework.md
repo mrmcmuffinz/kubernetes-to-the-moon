@@ -1,4 +1,4 @@
-# Runtime Security Homework — Assignment 1: Falco Threat Detection
+# Runtime Security Homework: Assignment 1: Falco Threat Detection
 
 Work through the tutorial (`runtime-security-tutorial.md`) before attempting these exercises. The tutorial installs Falco and walks through the rule structure and output format. All exercises assume Falco is installed and Running in the `falco` namespace.
 

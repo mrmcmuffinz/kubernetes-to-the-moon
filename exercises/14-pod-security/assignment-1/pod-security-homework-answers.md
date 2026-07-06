@@ -469,13 +469,13 @@ kubectl describe rs -n ex-5-2 -l app=multibug | grep -A 5 Events
 
 Stacked Restricted violations, each reported in one rejection message:
 
-1. `hostNetwork: true` — violates Baseline (also Restricted).
-2. `securityContext.runAsUser: 0` on the pod — UID 0 is root, violates `runAsNonRoot`.
-3. `privileged: true` — violates Baseline.
-4. `capabilities.add: ["NET_ADMIN"]` — NET_ADMIN is not in the Baseline-allowed list; violates Baseline.
-5. Missing `allowPrivilegeEscalation: false` — violates Restricted.
-6. Missing `capabilities.drop: ["ALL"]` — violates Restricted (implicit, not fixed by removing `add`).
-7. Missing `seccompProfile.type` — violates Restricted.
+1. `hostNetwork: true` - violates Baseline (also Restricted).
+2. `securityContext.runAsUser: 0` on the pod - UID 0 is root, violates `runAsNonRoot`.
+3. `privileged: true` - violates Baseline.
+4. `capabilities.add: ["NET_ADMIN"]` - NET_ADMIN is not in the Baseline-allowed list; violates Baseline.
+5. Missing `allowPrivilegeEscalation: false` - violates Restricted.
+6. Missing `capabilities.drop: ["ALL"]` - violates Restricted (implicit, not fixed by removing `add`).
+7. Missing `seccompProfile.type` - violates Restricted.
 
 Each one must be addressed. Changing the image to `nginxinc/nginx-unprivileged:1.25` is the simplest way to satisfy the non-root requirement because that image's baked-in user is UID 101.
 

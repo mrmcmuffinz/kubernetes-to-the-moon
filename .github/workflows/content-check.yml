@@ -1,0 +1,25 @@
+name: Content Check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'exercises/**'
+      - 'scripts/check-content.sh'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'exercises/**'
+      - 'scripts/check-content.sh'
+
+jobs:
+  check:
+    name: Validate exercise content
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run content checks
+        run: |
+          chmod +x scripts/check-content.sh
+          ./scripts/check-content.sh

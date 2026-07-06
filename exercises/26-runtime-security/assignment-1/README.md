@@ -1,4 +1,4 @@
-# Runtime Security — Assignment 1: Falco Threat Detection
+# Runtime Security: Assignment 1: Falco Threat Detection
 
 This is the first of two Runtime Security assignments. It focuses on Falco, the open-source runtime security engine that monitors system calls and Kubernetes events in real time. You will install Falco as a DaemonSet using the eBPF probe, explore the built-in ruleset, write custom rules using the Falco condition language, and observe alerts firing when threat behaviors are triggered inside running containers. The second assignment in this series covers Kubernetes audit logging and immutable container patterns.
 

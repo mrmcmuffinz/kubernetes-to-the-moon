@@ -1,4 +1,4 @@
-# Assignment Prompt: Runtime Security — Assignment 2
+# Assignment Prompt: Runtime Security: Assignment 2
 
 **Series:** Runtime Security (2 of 2)
 **Topic slug:** runtime-security
@@ -6,11 +6,11 @@
 
 ## Metadata
 
-**Domain:** CKS — Monitoring, Logging and Runtime Security (20%)
+**Domain:** CKS - Monitoring, Logging and Runtime Security (20%)
 **Competencies:** Kubernetes audit logging, audit policy authoring, log analysis, immutable container patterns
 **Prerequisites:** runtime-security/assignment-1, 17-cluster-lifecycle/assignment-1, 22-cluster-hardening/assignment-1
 
-## Scope — In Scope
+## Scope: In Scope
 
 *Kubernetes audit logging architecture*
 - How the API server generates audit events: every API request produces an event at multiple stages
@@ -54,7 +54,7 @@
 - Combining readOnlyRootFilesystem with Falco rules for write detection
 - Audit log events for attempted writes to read-only filesystems: the API server does not see filesystem events, but Falco does; the two tools are complementary
 
-## Scope — Out of Scope
+## Scope: Out of Scope
 
 - Falco rules and runtime syscall monitoring: covered in runtime-security/assignment-1
 - API server flag basics (just --audit-log-path): covered at surface level in cluster-hardening/assignment-1; full policy authoring is here

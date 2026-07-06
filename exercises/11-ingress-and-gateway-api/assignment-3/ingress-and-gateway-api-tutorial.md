@@ -4,9 +4,9 @@ Gateway API is the Kubernetes replacement for the frozen Ingress API. It is more
 
 The three core resources are:
 
-- **GatewayClass** — the administrator's statement that a specific controller is available. Usually set up once per cluster by the infrastructure team.
-- **Gateway** — the infrastructure piece. Defines listeners (port, protocol, hostname, allowed routes). Usually owned by the platform team.
-- **HTTPRoute** — the routing rules themselves (match paths, forward to Services, apply filters). Owned by application teams.
+- **GatewayClass** - the administrator's statement that a specific controller is available. Usually set up once per cluster by the infrastructure team.
+- **Gateway** - the infrastructure piece. Defines listeners (port, protocol, hostname, allowed routes). Usually owned by the platform team.
+- **HTTPRoute** - the routing rules themselves (match paths, forward to Services, apply filters). Owned by application teams.
 
 Persona separation is the practical payoff: the application team writes HTTPRoutes in their namespace, which attach to Gateways in the platform namespace, as long as the Gateway's `allowedRoutes` permit attachment. This is the Gateway API's answer to "anyone can create an Ingress and accidentally route traffic to their Service."
 
@@ -231,7 +231,7 @@ curl -s -H "Host: hello.example.test" http://localhost:8090/
 
 kill $PF_PID 2>/dev/null
 
-# NodePort alternative (externalTrafficPolicy: Local — must hit the node running the Envoy pod):
+# NodePort alternative (externalTrafficPolicy: Local - must hit the node running the Envoy pod):
 NODE=$(kubectl get pods -n envoy-gateway-system \
   -l gateway.envoyproxy.io/owning-gateway-namespace=tutorial-gw-infra \
   -o jsonpath='{.items[0].spec.nodeName}')
@@ -250,14 +250,14 @@ Gateway API conditions are the single best source of diagnostic information. Eve
 
 Gateway conditions:
 
-- `Accepted` — the controller recognized the Gateway.
-- `Programmed` — the Gateway's configuration has been pushed to the data plane.
-- `ResolvedRefs` — all listener references resolve.
+- `Accepted` - the controller recognized the Gateway.
+- `Programmed` - the Gateway's configuration has been pushed to the data plane.
+- `ResolvedRefs` - all listener references resolve.
 
 HTTPRoute conditions (per parent):
 
-- `Accepted` — the parent Gateway accepted this HTTPRoute's attachment.
-- `ResolvedRefs` — all backends referenced by `backendRefs` resolve.
+- `Accepted` - the parent Gateway accepted this HTTPRoute's attachment.
+- `ResolvedRefs` - all backends referenced by `backendRefs` resolve.
 
 ```bash
 kubectl get gateway -n tutorial-gw-infra tut-gateway \

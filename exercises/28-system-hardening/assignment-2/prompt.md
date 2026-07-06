@@ -1,4 +1,4 @@
-# Assignment Prompt: System Hardening — Assignment 2
+# Assignment Prompt: System Hardening: Assignment 2
 
 **Series:** System Hardening (2 of 2)
 **Topic slug:** system-hardening
@@ -6,11 +6,11 @@
 
 ## Metadata
 
-**Domain:** CKS — System Hardening (15%)
+**Domain:** CKS: System Hardening (15%)
 **Competencies:** Custom seccomp profiles, syscall allow/deny lists, violation debugging, node OS hardening concepts
 **Prerequisites:** 13-security-contexts/assignment-3 (introductory seccomp), system-hardening/assignment-1
 
-## Scope — In Scope
+## Scope: In Scope
 
 *seccomp profile types review*
 - Unconfined: no syscall filtering (default if no seccomp profile is specified)
@@ -56,7 +56,7 @@
 - Principle of minimal node footprint: only install what the node needs to run Kubernetes
 - These are knowledge-level concepts for kind (cannot fully simulate bare-metal OS hardening); exercises describe what to check and what to look for, rather than making system changes
 
-## Scope — Out of Scope
+## Scope: Out of Scope
 
 - seccomp at introductory level (RuntimeDefault annotation): covered in 13-security-contexts/assignment-3
 - AppArmor profiles: covered in system-hardening/assignment-1

@@ -1,4 +1,4 @@
-# Runtime Security — Assignment 2: Audit Logging and Immutable Containers
+# Runtime Security: Assignment 2: Audit Logging and Immutable Containers
 
 This is the second of two Runtime Security assignments. It focuses on Kubernetes audit logging and the immutable container pattern. You will enable audit logging on the kube-apiserver by editing its static pod manifest inside the kind control plane container, write audit policies that capture security-relevant events while suppressing noise, analyze audit log output with `jq` to reconstruct event sequences, and combine `readOnlyRootFilesystem` with Falco write-detection rules to build defense-in-depth. The first assignment in this series covers Falco architecture and runtime syscall monitoring.
 

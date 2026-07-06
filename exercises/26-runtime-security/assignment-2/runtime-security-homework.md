@@ -1,4 +1,4 @@
-# Runtime Security Homework — Assignment 2: Audit Logging and Immutable Containers
+# Runtime Security Homework: Assignment 2: Audit Logging and Immutable Containers
 
 Work through the tutorial (`runtime-security-tutorial.md`) before attempting these exercises. The tutorial enables audit logging on the kube-apiserver static pod and demonstrates audit policy structure, log analysis, and immutable container configuration. These exercises assume audit logging is already enabled and the audit log is writing to `/var/log/kubernetes/audit/audit.log` inside the kind control plane container.
 

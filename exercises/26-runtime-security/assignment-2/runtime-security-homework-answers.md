@@ -1,4 +1,4 @@
-# Runtime Security Homework Answers — Assignment 2: Audit Logging and Immutable Containers
+# Runtime Security Homework Answers: Assignment 2: Audit Logging and Immutable Containers
 
 ---
 

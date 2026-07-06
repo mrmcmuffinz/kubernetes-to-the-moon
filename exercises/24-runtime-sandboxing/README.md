@@ -8,7 +8,7 @@
 
 ## Why One Assignment
 
-Runtime sandboxing is a focused topic with a single central concept: the RuntimeClass resource and its two main implementations (gVisor and kata containers). The subtopics — installing a sandbox runtime, creating a RuntimeClass, assigning it to pods, verifying isolation, and understanding the trade-offs — fit comfortably within a single 15-exercise assignment without needing to thin the content. Both gVisor and kata containers should appear in the same assignment since their Kubernetes integration pattern is identical; the difference is in the underlying isolation mechanism, which is a comparison exercise rather than a separate topic.
+Runtime sandboxing is a focused topic with a single central concept: the RuntimeClass resource and its two main implementations (gVisor and kata containers). The subtopics (installing a sandbox runtime, creating a RuntimeClass, assigning it to pods, verifying isolation, and understanding the trade-offs ) fit comfortably within a single 15-exercise assignment without needing to thin the content. Both gVisor and kata containers should appear in the same assignment since their Kubernetes integration pattern is identical; the difference is in the underlying isolation mechanism, which is a comparison exercise rather than a separate topic.
 
 ---
 
