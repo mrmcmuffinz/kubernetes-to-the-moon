@@ -47,7 +47,8 @@
       "Bash(echo \"exit: $?\")",
       "Bash(./verify.sh 1.1)",
       "Bash(grep *)",
-      "WebFetch(domain:hub.docker.com)"
+      "WebFetch(domain:hub.docker.com)",
+      "Bash(xargs ls -la)"
     ]
   },
   "effortLevel": "xhigh"
